@@ -21,18 +21,24 @@ SIM_coreState CPU;
 Buffer wide_pipe[SIM_PIPELINE_DEPTH];
 
 
-
-
-
-static int __generateNOP(SIM_cmd *nop){
+static int __generateNOP(Buffer *nop){
     if(nop ==NULL){
         return ERROR;
     }
-    nop->opcode=CMD_NOP;
-    nop->dst = NOP;
-    nop->isSrc2Imm = false;
-    nop->src1=NOP;
-    nop->src2=NOP;
+    nop->pip.cmd.opcode = CMD_NOP;
+    nop->pip.cmd.src1 = NOP;
+    nop->pip.cmd.src2 = NOP;
+    nop->pip.cmd.dst = NOP;
+    nop->pip.cmd.isSrc2Imm = false;
+
+    nop->pip.src1Val = NOP;
+    nop->pip.src2Val = NOP;
+
+    nop->alu_res = NOP;
+    nop ->dest = NOP;
+    nop ->mem_data = NOP;
+    nop->pc_after_fetch = NOP;
+    nop->branch_taken = false;
     return 0;
 }
 
@@ -196,6 +202,14 @@ int __MEM(Buffer *buffer) {
     if(cmd_opcode >= CMD_BR && cmd_opcode <= CMD_BRNEQ){
         if(wide_pipe[MEMORY].branch_taken == true){
             uint32_t next_inst_addr = (uint32_t)wide_pipe[MEMORY].alu_res;
+            Buffer nop;
+            if (__generateNOP(&nop) == ERROR){
+                return ERROR;
+            }
+            for(int p = FETCH; p <= EXECUTE; p++){
+                wide_pipe[p] = nop;
+                CPU.pipeStageState[p] = nop.pip;
+            }
             CPU.pc = next_inst_addr;
         }
         return 0;
@@ -248,21 +262,14 @@ int SIM_CoreReset(void) {
         CPU.regFile[r] = NOP;
     }
 
-    SIM_cmd nop;
+    Buffer nop;
     if (__generateNOP(&nop) == ERROR) {
         return ERROR;
     }
 
     for (int p = 0; p < SIM_PIPELINE_DEPTH; p++) {
-        CPU.pipeStageState[p].cmd = nop;
-        CPU.pipeStageState[p].src1Val = NOP;
-        CPU.pipeStageState[p].src2Val = NOP;
-        wide_pipe[p].pip = CPU.pipeStageState[p];
-        wide_pipe[p].mem_data = NOP;
-        wide_pipe[p].alu_res = NOP;
-        wide_pipe[p].pc_after_fetch = NOP;
-        wide_pipe[p].dest = NOP;
-        wide_pipe[p].branch_taken = false;
+        CPU.pipeStageState[p] = nop.pip;
+        wide_pipe[p]=nop;
     }
     return 0;
 }
@@ -271,7 +278,6 @@ int SIM_CoreReset(void) {
   This function is expected to update the core pipeline given a clock cycle event.
 */
 void SIM_CoreClkTick() {
-    SIM_MemClkTick();
     Buffer buffer;
     buffer.mem_data = ERROR;//default value;
     if (__IF(&buffer) == ERROR){
