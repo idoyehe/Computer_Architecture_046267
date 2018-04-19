@@ -61,8 +61,14 @@ void SIM_CoreClkTick() {
     The function will return the state of the pipe at the end of a cycle
 */
 void SIM_CoreGetState(SIM_coreState *curState) {
+    curState->pc = CPU.pc;
 
+    for (int i=0; i < SIM_REGFILE_SIZE ; i++) {
+        curState->regFile[i] = CPU.regFile[i];
+    }
 
-
+    for (int j=0; j < SIM_PIPELINE_DEPTH; j++){
+        curState->pipeStageState[j] = CPU.pipeStageState[j];
+    }
 }
 
