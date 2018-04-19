@@ -19,7 +19,8 @@ typedef struct {
 
 SIM_coreState CPU;
 Buffer wide_pipe[SIM_PIPELINE_DEPTH];
-
+int push_bubble_counter;
+bool mem_read_failed;
 
 static int __generateNOP(Buffer *nop){
     if(nop ==NULL){
@@ -41,11 +42,32 @@ static int __generateNOP(Buffer *nop){
     return 0;
 }
 
+static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
+    if(stage->cmd.dst == CPU.pipeStageState[DECODE].cmd.src1 ||
+       (!CPU.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CPU.pipeStageState[DECODE].cmd.src2)){
+        //RAW hazard detected
+        if(stage_name == EXECUTE){
+            push_bubble_counter = 3;
+        }
+        if(stage_name == MEMORY && push_bubble_counter < 3){
+            push_bubble_counter = 2;
+
+        }
+        if(stage_name == WRITEBACK && push_bubble_counter < 2){
+            push_bubble_counter = 1;
+        }
+        return true;
+    }
+    return false;
+}
+
 static int __IF(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
     }
-
+    if(push_bubble_counter > 0 || mem_read_failed){
+        return 0;
+    }
     (*buffer) = wide_pipe[FETCH];
 
     PipeStageState instruction;
@@ -63,10 +85,18 @@ static int __IF(Buffer *buffer){
     return 0;
 }
 
-
 static int __ID(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
+    }
+    if(mem_read_failed){
+        return 0;
+    }
+    if(push_bubble_counter > 0){
+        assert(buffer != NULL);
+        __generateNOP(buffer);
+        push_bubble_counter--;
+        return 0;
     }
     Buffer temp = *buffer;
 
@@ -85,6 +115,7 @@ static int __ID(Buffer *buffer){
     int32_t src2 = CPU.pipeStageState[DECODE].cmd.src2;
     bool srcImmd = CPU.pipeStageState[DECODE].cmd.isSrc2Imm;
 
+    //TODO
     CPU.pipeStageState[DECODE].src1Val = CPU.regFile[src1];
     if (srcImmd)
         CPU.pipeStageState[DECODE].src2Val = src2;
@@ -104,6 +135,9 @@ static int __ID(Buffer *buffer){
 static int __EXE(Buffer *buffer){
     if(buffer == NULL ){
         return ERROR;
+    }
+    if(mem_read_failed){
+        return 0;
     }
     Buffer temp = *buffer;
 
@@ -170,14 +204,17 @@ int __MEM(Buffer *buffer) {
     if(buffer == NULL){
         return ERROR;
     }
-
-    Buffer temp = *buffer;
-
-    (*buffer) = wide_pipe[MEMORY];
-
-    wide_pipe[MEMORY] = temp;
-
-    CPU.pipeStageState[MEMORY] = temp.pip;
+    if(!mem_read_failed) {
+        Buffer temp = *buffer;
+        (*buffer) = wide_pipe[MEMORY];
+        wide_pipe[MEMORY] = temp;
+        CPU.pipeStageState[MEMORY] = temp.pip;
+    }
+    else{
+        assert(buffer !=NULL);
+        __generateNOP(buffer);
+        mem_read_failed =false;
+    }
 
     SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[MEMORY].cmd.opcode;
 
@@ -196,7 +233,9 @@ int __MEM(Buffer *buffer) {
 
     if(cmd_opcode == CMD_LOAD){
         uint32_t read_addr = (uint32_t)wide_pipe[MEMORY].alu_res;
-        SIM_MemDataRead(read_addr,&(wide_pipe[MEMORY].mem_data));
+        if (SIM_MemDataRead(read_addr,&(wide_pipe[MEMORY].mem_data)) == ERROR){
+            mem_read_failed = true;
+        }
     }
     if(cmd_opcode >= CMD_BR && cmd_opcode <= CMD_BRNEQ){
         if(wide_pipe[MEMORY].branch_taken == true){
@@ -256,6 +295,8 @@ int __WB(Buffer *buffer) {
 */
 int SIM_CoreReset(void) {
     CPU.pc = NOP;
+    push_bubble_counter = 0;
+    mem_read_failed =false;
 
     for (int r = 0; r < SIM_REGFILE_SIZE; r++) {
         CPU.regFile[r] = NOP;
@@ -322,4 +363,3 @@ void SIM_CoreGetState(SIM_coreState *curState) {
         curState->pipeStageState[p] = CPU.pipeStageState[p];
     }
 }
-
