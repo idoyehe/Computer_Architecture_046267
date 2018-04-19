@@ -3,6 +3,18 @@
 
 #include "sim_api.h"
 
+#define NOP 0
+
+/*Globals*/
+
+SIM_coreState CPU;
+
+
+
+
+
+
+
 
 /*! SIM_CoreReset: Reset the processor core simulator machine to start new simulation
   Use this API to initialize the processor core simulator's data structures.
@@ -13,6 +25,7 @@
   \returns 0 on success. <0 in case of initialization failure.
 */
 int SIM_CoreReset(void) {
+
 }
 
 /*! SIM_CoreClkTick: Update the core simulator's state given one clock cycle.
@@ -27,5 +40,8 @@ void SIM_CoreClkTick() {
     The function will return the state of the pipe at the end of a cycle
 */
 void SIM_CoreGetState(SIM_coreState *curState) {
+
+
+
 }
 
