@@ -21,6 +21,11 @@ SIM_coreState CPU;
 Buffer wide_pipe[SIM_PIPELINE_DEPTH];
 int push_bubble_counter;
 bool mem_read_failed;
+int wb_value;
+int wb_reg;
+bool wb_flag;
+uint32_t next_inst_addr;
+bool br_flag;
 
 static int __generateNOP(Buffer *nop){
     if(nop ==NULL){
@@ -42,21 +47,37 @@ static int __generateNOP(Buffer *nop){
     return 0;
 }
 
+static void __flush_pip(){
+    Buffer nop;
+    __generateNOP(&nop);
+    for (int p = FETCH; p <= EXECUTE ; p++){
+        wide_pipe[p] = nop;
+        CPU.pipeStageState[p] = nop.pip;
+    }
+    CPU.pc = next_inst_addr;
+}
+
 static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
+    push_bubble_counter = 0;
+    SIM_cmd_opcode opcode = stage->cmd.opcode;
+    if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR || opcode == CMD_BREQ || opcode == CMD_BRNEQ){
+        return false;
+    }
     if(stage->cmd.dst == CPU.pipeStageState[DECODE].cmd.src1 ||
        (!CPU.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CPU.pipeStageState[DECODE].cmd.src2)){
         //RAW hazard detected
         if(stage_name == EXECUTE){
             push_bubble_counter = 3;
+            return true;
         }
-        if(stage_name == MEMORY && push_bubble_counter < 3){
+        if(stage_name == MEMORY){
             push_bubble_counter = 2;
-
+            return true;
         }
-        if(stage_name == WRITEBACK && push_bubble_counter < 2){
+        if(stage_name == WRITEBACK && wb_flag){
             push_bubble_counter = 1;
+            return true;
         }
-        return true;
     }
     return false;
 }
@@ -65,16 +86,37 @@ static int __IF(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
     }
-    if(push_bubble_counter > 0 || mem_read_failed){
+
+    if(wb_flag){
+        CPU.regFile[wb_reg] = wb_value;
+        wb_flag=false;
+    }
+
+    if(mem_read_failed){
         return 0;
     }
-    (*buffer) = wide_pipe[FETCH];
 
+    if(br_flag){
+        push_bubble_counter = 0;
+    }
+
+    if(push_bubble_counter > 0){
+        return 0;
+    }
+
+    if(br_flag){
+        __flush_pip();
+        push_bubble_counter = 0;
+        br_flag = false;
+    }
+
+     CPU.pc+=4;
+
+    (*buffer) = wide_pipe[FETCH];
     PipeStageState instruction;
     instruction.src1Val = NOP;
     instruction.src2Val = NOP;
     SIM_MemInstRead((uint32_t)CPU.pc,&(instruction.cmd));
-    CPU.pc+=4;
     wide_pipe[FETCH].pip = instruction;
     wide_pipe->pc_after_fetch = CPU.pc;
     wide_pipe->alu_res = ERROR;
@@ -89,46 +131,55 @@ static int __ID(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
     }
-    if(mem_read_failed){
-        return 0;
+    if(push_bubble_counter > 0 || mem_read_failed){
+        if(push_bubble_counter > 0) {
+            assert(buffer != NULL);
+            __generateNOP(buffer);
+            push_bubble_counter--;
+        }
     }
-    if(push_bubble_counter > 0){
-        assert(buffer != NULL);
-        __generateNOP(buffer);
-        push_bubble_counter--;
-        return 0;
+    else {
+        Buffer temp = *buffer;
+
+        (*buffer) = wide_pipe[DECODE];
+
+        wide_pipe[DECODE] = temp;
     }
-    Buffer temp = *buffer;
 
-    (*buffer) = wide_pipe[DECODE];
-
-    wide_pipe[DECODE] = temp;
-
-    CPU.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
-
-    SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[DECODE].cmd.opcode;
+    SIM_cmd_opcode cmd_opcode= wide_pipe[DECODE].pip.cmd.opcode;
 
     if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
+        CPU.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
         return 0;
     }
-    int src1 = CPU.pipeStageState[DECODE].cmd.src1;
-    int32_t src2 = CPU.pipeStageState[DECODE].cmd.src2;
-    bool srcImmd = CPU.pipeStageState[DECODE].cmd.isSrc2Imm;
+    int src1 = wide_pipe[DECODE].pip.cmd.src1;
+    int32_t src2 =  wide_pipe[DECODE].pip.cmd.src2;
+    bool srcImmd =  wide_pipe[DECODE].pip.cmd.isSrc2Imm;
 
-    //TODO
-    CPU.pipeStageState[DECODE].src1Val = CPU.regFile[src1];
+    wide_pipe[DECODE].pip.src1Val = CPU.regFile[src1];
     if (srcImmd)
-        CPU.pipeStageState[DECODE].src2Val = src2;
+        wide_pipe[DECODE].pip.src2Val = src2;
     else
-        CPU.pipeStageState[DECODE].src2Val = CPU.regFile[src2];
+        wide_pipe[DECODE].pip.src2Val = CPU.regFile[src2];
+
 
     if(cmd_opcode >= CMD_STORE && cmd_opcode <= CMD_BRNEQ) {
         //dst register hold a memory address
-        int dest_reg = CPU.pipeStageState[DECODE].cmd.dst;
+        int dest_reg = wide_pipe[DECODE].pip.cmd.dst;
         wide_pipe[DECODE].dest = CPU.regFile[dest_reg];
     }
     else
-        wide_pipe[DECODE].dest = CPU.pipeStageState->cmd.dst;
+        wide_pipe[DECODE].dest = wide_pipe[DECODE].pip.cmd.dst;
+    CPU.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
+    if(__hazard_detect_unit(&CPU.pipeStageState[EXECUTE],EXECUTE)){
+        return 0;
+    }
+    if(__hazard_detect_unit(&CPU.pipeStageState[MEMORY],MEMORY)){
+        return 0;
+    }
+    if(__hazard_detect_unit(&CPU.pipeStageState[WRITEBACK],WRITEBACK)){
+        return 0;
+    }
     return 0;
 }
 
@@ -152,6 +203,8 @@ static int __EXE(Buffer *buffer){
     if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
         return 0;
     }
+
+    __hazard_detect_unit(&(CPU.pipeStageState[EXECUTE]),EXECUTE);
 
     if(cmd_opcode == CMD_ADD || cmd_opcode == CMD_ADDI){
         wide_pipe[EXECUTE].alu_res = CPU.pipeStageState[EXECUTE].src1Val +
@@ -222,7 +275,7 @@ int __MEM(Buffer *buffer) {
         return 0;
     }
 
-    if(cmd_opcode <= CMD_SUBI || cmd_opcode >= CMD_BR ){
+    if(cmd_opcode <= CMD_SUBI ){
         // commands that does NOT use memory.
         return 0;
     }
@@ -235,22 +288,15 @@ int __MEM(Buffer *buffer) {
         uint32_t read_addr = (uint32_t)wide_pipe[MEMORY].alu_res;
         if (SIM_MemDataRead(read_addr,&(wide_pipe[MEMORY].mem_data)) == ERROR){
             mem_read_failed = true;
+            return 0;
         }
+
     }
-    if(cmd_opcode >= CMD_BR && cmd_opcode <= CMD_BRNEQ){
-        if(wide_pipe[MEMORY].branch_taken == true){
-            uint32_t next_inst_addr = (uint32_t)wide_pipe[MEMORY].alu_res;
-            Buffer nop;
-            if (__generateNOP(&nop) == ERROR){
-                return ERROR;
-            }
-            for(int p = FETCH; p <= EXECUTE; p++){
-                wide_pipe[p] = nop;
-                CPU.pipeStageState[p] = nop.pip;
-            }
-            CPU.pc = next_inst_addr;
+    if(cmd_opcode >= CMD_BR && cmd_opcode <= CMD_BRNEQ) {
+        if (wide_pipe[MEMORY].branch_taken == true) {
+            next_inst_addr = (uint32_t) wide_pipe[MEMORY].alu_res;
+            br_flag = true;
         }
-        return 0;
     }
     return 0;
 }
@@ -262,7 +308,7 @@ int __WB(Buffer *buffer) {
     wide_pipe[WRITEBACK] = (*buffer);
     CPU.pipeStageState[WRITEBACK] = buffer->pip;
 
-    SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[MEMORY].cmd.opcode;
+    SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[WRITEBACK].cmd.opcode;
 
     if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
         return 0;
@@ -272,14 +318,14 @@ int __WB(Buffer *buffer) {
         //command does NOT use WriteBack
         return 0;
     }
-    int wb_value, wb_reg = wide_pipe[WRITEBACK].dest;
+    wb_reg = wide_pipe[WRITEBACK].dest;
     if(cmd_opcode == CMD_LOAD){
         wb_value = wide_pipe[WRITEBACK].mem_data;
     }
     else{
         wb_value = wide_pipe[WRITEBACK].alu_res;
     }
-    CPU.regFile[wb_reg] = wb_value;
+    wb_flag = true;
     return 0;
 }
 
@@ -297,6 +343,8 @@ int SIM_CoreReset(void) {
     CPU.pc = NOP;
     push_bubble_counter = 0;
     mem_read_failed =false;
+    wb_flag =false;
+    br_flag = false;
 
     for (int r = 0; r < SIM_REGFILE_SIZE; r++) {
         CPU.regFile[r] = NOP;
@@ -311,6 +359,8 @@ int SIM_CoreReset(void) {
         CPU.pipeStageState[p] = nop.pip;
         wide_pipe[p]=nop;
     }
+    SIM_MemInstRead(CPU.pc,&(wide_pipe[FETCH].pip.cmd));
+    CPU.pipeStageState[FETCH]=wide_pipe[FETCH].pip;
     return 0;
 }
 
@@ -319,7 +369,7 @@ int SIM_CoreReset(void) {
 */
 void SIM_CoreClkTick() {
     Buffer buffer;
-    buffer.mem_data = ERROR;//default value;
+    __generateNOP(&buffer);
     if (__IF(&buffer) == ERROR){
         return;
     }
