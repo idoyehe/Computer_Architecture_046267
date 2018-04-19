@@ -54,6 +54,17 @@ int SIM_CoreReset(void) {
 */
 void SIM_CoreClkTick() {
 
+
+
+
+
+
+
+
+
+
+
+    return;
 }
 
 /*! SIM_CoreGetState: Return the current core (pipeline) internal state
@@ -61,14 +72,19 @@ void SIM_CoreClkTick() {
     The function will return the state of the pipe at the end of a cycle
 */
 void SIM_CoreGetState(SIM_coreState *curState) {
-    curState->pc = CPU.pc;
 
-    for (int i=0; i < SIM_REGFILE_SIZE ; i++) {
-        curState->regFile[i] = CPU.regFile[i];
+    if(curState == NULL){
+        return;
     }
 
-    for (int j=0; j < SIM_PIPELINE_DEPTH; j++){
-        curState->pipeStageState[j] = CPU.pipeStageState[j];
+    curState->pc = CPU.pc;
+
+    for (int r=0; r < SIM_REGFILE_SIZE ; r++) {
+        curState->regFile[r] = CPU.regFile[r];
+    }
+
+    for (int p=0; p < SIM_PIPELINE_DEPTH; p++){
+        curState->pipeStageState[p] = CPU.pipeStageState[p];
     }
 }
 
