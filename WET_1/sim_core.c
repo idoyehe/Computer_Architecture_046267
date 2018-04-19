@@ -30,7 +30,6 @@ static int __generateNOP(Buffer *nop){
     nop->pip.cmd.src2 = NOP;
     nop->pip.cmd.dst = NOP;
     nop->pip.cmd.isSrc2Imm = false;
-
     nop->pip.src1Val = NOP;
     nop->pip.src2Val = NOP;
 
