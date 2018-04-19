@@ -4,15 +4,23 @@
 #include "sim_api.h"
 
 #define NOP 0
+#define ERROR -1
 
 /*Globals*/
 
 SIM_coreState CPU;
 
-
-
-
-
+static int generateNOP(SIM_cmd *nop){
+    if(nop ==NULL){
+        return ERROR;
+    }
+    nop->opcode=CMD_NOP;
+    nop->dst = NOP;
+    nop->isSrc2Imm = false;
+    nop->src1=NOP;
+    nop->src2=NOP;
+    return 0;
+}
 
 
 
@@ -25,7 +33,20 @@ SIM_coreState CPU;
   \returns 0 on success. <0 in case of initialization failure.
 */
 int SIM_CoreReset(void) {
+    CPU.pc = NOP;
 
+    for(int r = 0; r < SIM_REGFILE_SIZE; r++ ) {
+        CPU.regFile[r] = NOP;
+    }
+
+    for(int p = 0; p < SIM_PIPELINE_DEPTH; p++ ) {
+        if(generateNOP(&(CPU.pipeStageState[p].cmd)) == ERROR){
+            return ERROR;
+        }
+        CPU.pipeStageState[p].src1Val = NOP;
+        CPU.pipeStageState[p].src2Val = NOP;
+    }
+    return 0;
 }
 
 /*! SIM_CoreClkTick: Update the core simulator's state given one clock cycle.
