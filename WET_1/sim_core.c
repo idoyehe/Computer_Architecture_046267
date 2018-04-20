@@ -6,8 +6,7 @@
 #define NOP 0
 #define ERROR (-1)
 
-/*Globals*/
-
+/*!struct that make the buffers in the pip with more signals*/
 typedef struct {
     PipeStageState pip;
     int32_t pc_after_fetch;
@@ -17,16 +16,24 @@ typedef struct {
     bool branch_taken;
 } Buffer;
 
-SIM_coreState CPU;
-Buffer wide_pipe[SIM_PIPELINE_DEPTH];
-int push_bubble_counter;
-bool mem_read_failed;
-int wb_value;
-int wb_reg;
-bool wb_flag;
-uint32_t next_inst_addr;
-bool br_flag;
+/*!Globals variables that describe the CPU pipeline*/
+SIM_coreState CORE;
+Buffer wide_pipe[SIM_PIPELINE_DEPTH];//pipeline buffers
 
+/*!signals*/
+int push_bubble_counter;//HDU signal
+
+bool mem_read_failed;//memory signal
+
+int writeBackValue;//WB value at the end of pip
+int writeBackRegister;//WB register at the end of pip
+bool writeBackSignal;//Flag that indicate if need to WB when clock rise
+
+uint32_t branchAddress;//new pc after branch
+bool branchSignal;//Flag that indicate if need to branch in next IF
+
+
+/*This Function get buffer and inject into it a NOP*/
 static int __generateNOP(Buffer *nop){
     if(nop ==NULL){
         return ERROR;
@@ -38,7 +45,6 @@ static int __generateNOP(Buffer *nop){
     nop->pip.cmd.isSrc2Imm = false;
     nop->pip.src1Val = NOP;
     nop->pip.src2Val = NOP;
-
     nop->alu_res = NOP;
     nop ->dest = NOP;
     nop ->mem_data = NOP;
@@ -47,24 +53,27 @@ static int __generateNOP(Buffer *nop){
     return 0;
 }
 
+/*!flushing the pipeline buffers from IF to EXE and updating PC to branch address*/
 static void __flush_pip(){
     Buffer nop;
     __generateNOP(&nop);
     for (int p = FETCH; p <= EXECUTE ; p++){
         wide_pipe[p] = nop;
-        CPU.pipeStageState[p] = nop.pip;
+        CORE.pipeStageState[p] = nop.pip;
     }
-    CPU.pc = next_inst_addr;
+    CORE.pc = branchAddress;
 }
 
+/*!This function is the hazard detection unit*/
 static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
     push_bubble_counter = 0;
     SIM_cmd_opcode opcode = stage->cmd.opcode;
-    if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR || opcode == CMD_BREQ || opcode == CMD_BRNEQ){
+    if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR
+       || opcode == CMD_BREQ || opcode == CMD_BRNEQ || branchSignal){
         return false;
     }
-    if(stage->cmd.dst == CPU.pipeStageState[DECODE].cmd.src1 ||
-       (!CPU.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CPU.pipeStageState[DECODE].cmd.src2)){
+    if(stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src1 ||
+       (!CORE.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src2)){
         //RAW hazard detected
         if(stage_name == EXECUTE){
             push_bubble_counter = 3;
@@ -74,64 +83,50 @@ static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
             push_bubble_counter = 2;
             return true;
         }
-        if(stage_name == WRITEBACK && wb_flag){
+        if(stage_name == WRITEBACK && writeBackSignal){
             push_bubble_counter = 1;
             return true;
         }
     }
     return false;
 }
-
+/*!This function is to handling the FETCH stage in the pipeline*/
 static int __IF(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
     }
 
-    if(wb_flag){
-        CPU.regFile[wb_reg] = wb_value;
-        wb_flag=false;
-    }
-
-    if(mem_read_failed){
+    if(mem_read_failed || push_bubble_counter > 0){
         return 0;
     }
 
-    if(br_flag){
-        push_bubble_counter = 0;
-    }
-
-    if(push_bubble_counter > 0){
-        return 0;
-    }
-
-    if(br_flag){
+    if(branchSignal){
         __flush_pip();
         push_bubble_counter = 0;
-        br_flag = false;
+        branchSignal = false;
     }
 
-     CPU.pc+=4;
-
+     CORE.pc+=4;
     (*buffer) = wide_pipe[FETCH];
     PipeStageState instruction;
     instruction.src1Val = NOP;
     instruction.src2Val = NOP;
-    SIM_MemInstRead((uint32_t)CPU.pc,&(instruction.cmd));
+    SIM_MemInstRead((uint32_t)CORE.pc,&(instruction.cmd));
     wide_pipe[FETCH].pip = instruction;
-    wide_pipe->pc_after_fetch = CPU.pc;
+    wide_pipe->pc_after_fetch = CORE.pc;
     wide_pipe->alu_res = ERROR;
     wide_pipe->mem_data = ERROR;
-
-    CPU.pipeStageState[FETCH] = instruction;
-
+    CORE.pipeStageState[FETCH] = instruction;
     return 0;
 }
 
-static int __ID(Buffer *buffer){
+/*!This function is to handling the DECODE stage in the pipeline*/
+static int __ID(Buffer *buffer, bool regFileChange){
     if(buffer == NULL){
         return ERROR;
     }
-    if(push_bubble_counter > 0 || mem_read_failed){
+    if(mem_read_failed || push_bubble_counter > 0 || regFileChange){
+        //Decoding again without fetching from FETCH stage
         if(push_bubble_counter > 0) {
             assert(buffer != NULL);
             __generateNOP(buffer);
@@ -146,186 +141,218 @@ static int __ID(Buffer *buffer){
         wide_pipe[DECODE] = temp;
     }
 
+    CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
     SIM_cmd_opcode cmd_opcode= wide_pipe[DECODE].pip.cmd.opcode;
 
     if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
-        CPU.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
         return 0;
     }
+
     int src1 = wide_pipe[DECODE].pip.cmd.src1;
     int32_t src2 =  wide_pipe[DECODE].pip.cmd.src2;
     bool srcImmd =  wide_pipe[DECODE].pip.cmd.isSrc2Imm;
 
-    wide_pipe[DECODE].pip.src1Val = CPU.regFile[src1];
+    wide_pipe[DECODE].pip.src1Val = CORE.regFile[src1];
     if (srcImmd)
         wide_pipe[DECODE].pip.src2Val = src2;
     else
-        wide_pipe[DECODE].pip.src2Val = CPU.regFile[src2];
-
+        wide_pipe[DECODE].pip.src2Val = CORE.regFile[src2];
 
     if(cmd_opcode >= CMD_STORE && cmd_opcode <= CMD_BRNEQ) {
         //dst register hold a memory address
-        int dest_reg = wide_pipe[DECODE].pip.cmd.dst;
-        wide_pipe[DECODE].dest = CPU.regFile[dest_reg];
+        int destRegister = wide_pipe[DECODE].pip.cmd.dst;
+        wide_pipe[DECODE].dest = CORE.regFile[destRegister];
     }
     else
         wide_pipe[DECODE].dest = wide_pipe[DECODE].pip.cmd.dst;
-    CPU.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
-    if(__hazard_detect_unit(&CPU.pipeStageState[EXECUTE],EXECUTE)){
+
+    CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;//COPY to CORE pipeline
+
+    if(__hazard_detect_unit(&CORE.pipeStageState[EXECUTE],EXECUTE)||
+            __hazard_detect_unit(&(buffer->pip),EXECUTE)){
         return 0;
     }
-    if(__hazard_detect_unit(&CPU.pipeStageState[MEMORY],MEMORY)){
+    if(__hazard_detect_unit(&CORE.pipeStageState[MEMORY],MEMORY)){
         return 0;
     }
-    if(__hazard_detect_unit(&CPU.pipeStageState[WRITEBACK],WRITEBACK)){
+    if(__hazard_detect_unit(&CORE.pipeStageState[WRITEBACK],WRITEBACK)){
         return 0;
     }
     return 0;
 }
-
-static int __EXE(Buffer *buffer){
-    if(buffer == NULL ){
+/*!This function is to handling the EXECUTE stage in the pipeline*/
+static int __EXE(Buffer *buffer) {
+    if (buffer == NULL) {
         return ERROR;
     }
-    if(mem_read_failed){
+    if (mem_read_failed) {
         return 0;
     }
+
     Buffer temp = *buffer;
-
     (*buffer) = wide_pipe[EXECUTE];
-
     wide_pipe[EXECUTE] = temp;
 
-    CPU.pipeStageState[EXECUTE] = wide_pipe[EXECUTE].pip;
+    CORE.pipeStageState[EXECUTE] = wide_pipe[EXECUTE].pip;
 
-    SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[EXECUTE].cmd.opcode;
+    SIM_cmd_opcode cmd_opcode = CORE.pipeStageState[EXECUTE].cmd.opcode;
 
-    if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
-        return 0;
-    }
+    //TODO: ADD forwarding unit
 
-    __hazard_detect_unit(&(CPU.pipeStageState[EXECUTE]),EXECUTE);
+    //ALU behavior according to cmd opcode
+    switch (cmd_opcode) {
+        case CMD_NOP:
+        case CMD_HALT:
+            break;
 
-    if(cmd_opcode == CMD_ADD || cmd_opcode == CMD_ADDI){
-        wide_pipe[EXECUTE].alu_res = CPU.pipeStageState[EXECUTE].src1Val +
-                                     CPU.pipeStageState[EXECUTE].src2Val;
-        return 0;
-    }
+        case CMD_ADD:
+        case CMD_ADDI:
+        case CMD_LOAD:
+            wide_pipe[EXECUTE].alu_res =
+                    CORE.pipeStageState[EXECUTE].src1Val +
+                    CORE.pipeStageState[EXECUTE].src2Val;
+            break;
 
-    if(cmd_opcode == CMD_SUB || cmd_opcode == CMD_SUBI){
-        wide_pipe[EXECUTE].alu_res = CPU.pipeStageState[EXECUTE].src1Val -
-                                     CPU.pipeStageState[EXECUTE].src2Val;
-        return 0;
-    }
+        case CMD_SUB:
+        case CMD_SUBI:
+            wide_pipe[EXECUTE].alu_res =
+                    CORE.pipeStageState[EXECUTE].src1Val -
+                    CORE.pipeStageState[EXECUTE].src2Val;
+            break;
 
-    if(cmd_opcode == CMD_LOAD){
-        wide_pipe[EXECUTE].alu_res = CPU.pipeStageState[EXECUTE].src1Val +
-                                     CPU.pipeStageState[EXECUTE].src2Val;
-        return 0;
-    }
+        case CMD_STORE:
+            wide_pipe[EXECUTE].alu_res =
+                    wide_pipe[EXECUTE].dest + CORE.pipeStageState[EXECUTE].src2Val;
+            break;
 
-    if(cmd_opcode == CMD_STORE){
-        wide_pipe[EXECUTE].alu_res = wide_pipe[EXECUTE].dest +
-                                     CPU.pipeStageState[EXECUTE].src2Val;
-        return 0;
-    }
 
-    if(cmd_opcode >= CMD_BR && cmd_opcode <= CMD_BRNEQ){
-        wide_pipe[EXECUTE].alu_res = wide_pipe[EXECUTE].pc_after_fetch +
-                                     wide_pipe[EXECUTE].dest;
-        if(cmd_opcode == CMD_BRNEQ){
-            wide_pipe[EXECUTE].branch_taken = (CPU.pipeStageState->src1Val!=
-                                               CPU.pipeStageState->src2Val);
-            return 0;
+        case CMD_BRNEQ:
+            wide_pipe[EXECUTE].branch_taken =
+                    (CORE.pipeStageState->src1Val != CORE.pipeStageState->src2Val);
+            wide_pipe[EXECUTE].alu_res =
+                    wide_pipe[EXECUTE].pc_after_fetch + wide_pipe[EXECUTE].dest;
+            break;
 
-        }
-        if(cmd_opcode == CMD_BREQ){
-            wide_pipe[EXECUTE].branch_taken = (CPU.pipeStageState->src1Val==
-                                               CPU.pipeStageState->src2Val);
-            return 0;
 
-        }
-        assert(cmd_opcode == CMD_BR);
-        wide_pipe[EXECUTE].branch_taken = true;
-        return 0;
+        case CMD_BREQ:
+            wide_pipe[EXECUTE].branch_taken =
+                    (CORE.pipeStageState->src1Val == CORE.pipeStageState->src2Val);
+            wide_pipe[EXECUTE].alu_res =
+                    wide_pipe[EXECUTE].pc_after_fetch + wide_pipe[EXECUTE].dest;
+            break;
+
+        case CMD_BR:
+            wide_pipe[EXECUTE].branch_taken = true;
+            wide_pipe[EXECUTE].alu_res =
+                    wide_pipe[EXECUTE].pc_after_fetch + wide_pipe[EXECUTE].dest;
+            break;
+
+        default:
+            break;
+
     }
     return 0;
 }
 
-
+/*!This function is to handling the MEMORY stage in the pipeline*/
 int __MEM(Buffer *buffer) {
-    if(buffer == NULL){
+    if (buffer == NULL) {
         return ERROR;
     }
-    if(!mem_read_failed) {
+
+    if (!mem_read_failed) {
+        /*No memory failure fetching from execute*/
         Buffer temp = *buffer;
         (*buffer) = wide_pipe[MEMORY];
         wide_pipe[MEMORY] = temp;
-        CPU.pipeStageState[MEMORY] = temp.pip;
-    }
-    else{
-        assert(buffer !=NULL);
+        CORE.pipeStageState[MEMORY] = temp.pip;
+    } else {
+        /*Memory read failed previous cycle NOT fetching from execute and trying to read again
+         * inject nop to WB */
+        assert(buffer != NULL);
         __generateNOP(buffer);
-        mem_read_failed =false;
+        mem_read_failed = false;
     }
 
-    SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[MEMORY].cmd.opcode;
+    SIM_cmd_opcode cmd_opcode = CORE.pipeStageState[MEMORY].cmd.opcode;
 
-    if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
-        return 0;
-    }
 
-    if(cmd_opcode <= CMD_SUBI ){
-        // commands that does NOT use memory.
-        return 0;
-    }
-    if(cmd_opcode == CMD_STORE){
-        uint32_t write_addr = (uint32_t)wide_pipe[MEMORY].alu_res;
-        SIM_MemDataWrite(write_addr,CPU.pipeStageState[MEMORY].src1Val);
-    }
+    switch (cmd_opcode) {
+        case CMD_NOP:
+        case CMD_HALT:
+        case CMD_ADD:
+        case CMD_ADDI:
+        case CMD_SUB:
+        case CMD_SUBI:
+            break;
 
-    if(cmd_opcode == CMD_LOAD){
-        uint32_t read_addr = (uint32_t)wide_pipe[MEMORY].alu_res;
-        if (SIM_MemDataRead(read_addr,&(wide_pipe[MEMORY].mem_data)) == ERROR){
-            mem_read_failed = true;
-            return 0;
-        }
+        case CMD_STORE:
+            SIM_MemDataWrite((uint32_t) wide_pipe[MEMORY].alu_res,
+                             wide_pipe[MEMORY].pip.src1Val);
+            break;
 
-    }
-    if(cmd_opcode >= CMD_BR && cmd_opcode <= CMD_BRNEQ) {
-        if (wide_pipe[MEMORY].branch_taken == true) {
-            next_inst_addr = (uint32_t) wide_pipe[MEMORY].alu_res;
-            br_flag = true;
-        }
+        case CMD_LOAD:
+            mem_read_failed =
+                    (SIM_MemDataRead((uint32_t) wide_pipe[MEMORY].alu_res,
+                                     &(wide_pipe[MEMORY].mem_data)) == ERROR);
+            break;
+
+        case CMD_BR:
+        case CMD_BREQ:
+        case CMD_BRNEQ:
+            if (wide_pipe[MEMORY].branch_taken == true) {
+                branchAddress = (uint32_t) wide_pipe[MEMORY].alu_res;
+                branchSignal = true;
+                push_bubble_counter = 0;
+            }
+            break;
+        default:
+            break;
     }
     return 0;
 }
 
+/*!This function is to handling the WRITEBACK stage in the pipeline*/
 int __WB(Buffer *buffer) {
     if(buffer == NULL){
         return ERROR;
     }
     wide_pipe[WRITEBACK] = (*buffer);
-    CPU.pipeStageState[WRITEBACK] = buffer->pip;
+    CORE.pipeStageState[WRITEBACK] = wide_pipe[WRITEBACK].pip;
 
-    SIM_cmd_opcode cmd_opcode= CPU.pipeStageState[WRITEBACK].cmd.opcode;
+    SIM_cmd_opcode cmd_opcode= CORE.pipeStageState[WRITEBACK].cmd.opcode;
 
-    if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
-        return 0;
-    }
 
-    if(cmd_opcode >= CMD_STORE){
-        //command does NOT use WriteBack
-        return 0;
+    switch (cmd_opcode) {
+        case CMD_NOP:
+        case CMD_HALT:
+        case CMD_STORE:
+        case CMD_BR:
+        case CMD_BREQ:
+        case CMD_BRNEQ: break;
+
+        case CMD_LOAD:
+            writeBackValue = wide_pipe[WRITEBACK].mem_data;
+            writeBackRegister = wide_pipe[WRITEBACK].dest;
+            writeBackSignal = true;
+            break;
+
+        case CMD_ADD:
+        case CMD_ADDI:
+        case CMD_SUB:
+        case CMD_SUBI:
+            writeBackValue = wide_pipe[WRITEBACK].alu_res;
+            writeBackRegister = wide_pipe[WRITEBACK].dest;
+            writeBackSignal = true;
+            break;
+        default:
+            break;
     }
-    wb_reg = wide_pipe[WRITEBACK].dest;
-    if(cmd_opcode == CMD_LOAD){
-        wb_value = wide_pipe[WRITEBACK].mem_data;
+    if(split_regfile && writeBackSignal){
+        CORE.regFile[writeBackRegister] = writeBackValue;
+        writeBackSignal = false;
+        writeBackValue = ERROR;
     }
-    else{
-        wb_value = wide_pipe[WRITEBACK].alu_res;
-    }
-    wb_flag = true;
     return 0;
 }
 
@@ -340,14 +367,16 @@ int __WB(Buffer *buffer) {
   \returns 0 on success. <0 in case of initialization failure.
 */
 int SIM_CoreReset(void) {
-    CPU.pc = NOP;
+    CORE.pc = NOP;
+    /*Reset signals*/
+
     push_bubble_counter = 0;
     mem_read_failed =false;
-    wb_flag =false;
-    br_flag = false;
+    writeBackSignal =false;
+    branchSignal = false;
 
     for (int r = 0; r < SIM_REGFILE_SIZE; r++) {
-        CPU.regFile[r] = NOP;
+        CORE.regFile[r] = NOP;
     }
 
     Buffer nop;
@@ -356,11 +385,11 @@ int SIM_CoreReset(void) {
     }
 
     for (int p = 0; p < SIM_PIPELINE_DEPTH; p++) {
-        CPU.pipeStageState[p] = nop.pip;
+        CORE.pipeStageState[p] = nop.pip;
         wide_pipe[p]=nop;
     }
-    SIM_MemInstRead(CPU.pc,&(wide_pipe[FETCH].pip.cmd));
-    CPU.pipeStageState[FETCH]=wide_pipe[FETCH].pip;
+    SIM_MemInstRead((uint32_t)CORE.pc,&(wide_pipe[FETCH].pip.cmd));
+    CORE.pipeStageState[FETCH]=wide_pipe[FETCH].pip;
     return 0;
 }
 
@@ -368,13 +397,20 @@ int SIM_CoreReset(void) {
   This function is expected to update the core pipeline given a clock cycle event.
 */
 void SIM_CoreClkTick() {
+
+    if(writeBackSignal && !split_regfile){//case need to WB whe clock rise
+        CORE.regFile[writeBackRegister] = writeBackValue;
+        writeBackSignal = false;
+        writeBackValue = ERROR;
+    }
+
     Buffer buffer;
     __generateNOP(&buffer);
     if (__IF(&buffer) == ERROR){
         return;
     }
     //Buffer hold instruction after IF
-    if(__ID(&buffer) == ERROR){
+    if(__ID(&buffer,false) == ERROR){
         return;
     }
     //Buffer hold instruction after ID
@@ -389,8 +425,11 @@ void SIM_CoreClkTick() {
     if(__WB(&buffer) == ERROR){
         return;
     }
+    __generateNOP(&buffer);
+    if(split_regfile && __ID(&buffer,true) == ERROR){
+        return;
+    }
 }
-
 
 
 /*! SIM_CoreGetState: Return the current core (pipeline) internal state
@@ -403,13 +442,13 @@ void SIM_CoreGetState(SIM_coreState *curState) {
         return;
     }
 
-    curState->pc = CPU.pc;
+    curState->pc = CORE.pc;
 
     for (int r=0; r < SIM_REGFILE_SIZE ; r++) {
-        curState->regFile[r] = CPU.regFile[r];
+        curState->regFile[r] = CORE.regFile[r];
     }
 
-    for (int p=0; p < SIM_PIPELINE_DEPTH; p++){
-        curState->pipeStageState[p] = CPU.pipeStageState[p];
+    for (int p = FETCH; p < SIM_PIPELINE_DEPTH; p++){
+        curState->pipeStageState[p] = CORE.pipeStageState[p];
     }
 }
