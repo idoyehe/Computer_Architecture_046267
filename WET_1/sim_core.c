@@ -21,7 +21,7 @@ SIM_coreState CORE;
 Buffer wide_pipe[SIM_PIPELINE_DEPTH];//pipeline buffers
 
 /*!signals*/
-int push_bubble_counter;//HDU signal
+bool hazard_signal;//HDU signal
 
 bool mem_read_failed;//memory signal
 
@@ -66,7 +66,7 @@ static void _flush_pip_(){
 
 /*!This function is the hazard detection unit*/
 static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
-    push_bubble_counter = 0;
+    hazard_signal = false;
     SIM_cmd_opcode opcode = stage->cmd.opcode;
     if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR
        || opcode == CMD_BREQ || opcode == CMD_BRNEQ || branchSignal){
@@ -76,15 +76,15 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
        (!CORE.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src2)){
         //RAW hazard detected
         if(stage_name == EXECUTE){
-            push_bubble_counter = 3;
+            hazard_signal = true;
             return true;
         }
         if(stage_name == MEMORY){
-            push_bubble_counter = 2;
+            hazard_signal = true;
             return true;
         }
         if(stage_name == WRITEBACK){
-            push_bubble_counter = 1;
+            hazard_signal = true;
             return true;
         }
     }
@@ -96,13 +96,13 @@ static int _IF_(Buffer *buffer){
         return ERROR;
     }
 
-    if(mem_read_failed || push_bubble_counter > 0){
+    if(mem_read_failed || hazard_signal) {
         return 0;
     }
 
     if(branchSignal){
         _flush_pip_();
-        push_bubble_counter = 0;
+        hazard_signal = false;
         branchSignal = false;
     }
 
@@ -121,28 +121,25 @@ static int _IF_(Buffer *buffer){
 }
 
 /*!This function is to handling the DECODE stage in the pipeline*/
-static int _ID_(Buffer *buffer, bool regFileChange){
-    if(buffer == NULL){
+static int _ID_(Buffer *buffer, bool advancePip){
+    if(buffer == NULL) {
         return ERROR;
     }
-    if(mem_read_failed || push_bubble_counter > 0 || regFileChange){
-        //Decoding again without fetching from FETCH stage
-        if(push_bubble_counter > 0) {
+
+    if(advancePip){
+        if (mem_read_failed || hazard_signal){
             assert(buffer != NULL);
             _generateNOP_(buffer);
-            push_bubble_counter--;
         }
+        else{
+            Buffer temp = *buffer;
+            (*buffer) = wide_pipe[DECODE];
+            wide_pipe[DECODE] = temp;
+            CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
+        }
+            return 0;
     }
-    else {
-        Buffer temp = *buffer;
 
-        (*buffer) = wide_pipe[DECODE];
-
-        wide_pipe[DECODE] = temp;
-        return 0;
-    }
-
-    CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
     SIM_cmd_opcode cmd_opcode= wide_pipe[DECODE].pip.cmd.opcode;
 
     if(cmd_opcode == CMD_NOP ||cmd_opcode == CMD_HALT ){
@@ -175,7 +172,8 @@ static int _ID_(Buffer *buffer, bool regFileChange){
     if(_hazard_detect_unit_(&CORE.pipeStageState[MEMORY], MEMORY)){
         return 0;
     }
-    if(_hazard_detect_unit_(&CORE.pipeStageState[WRITEBACK], WRITEBACK)){
+    if(!split_regfile &&
+       _hazard_detect_unit_(&CORE.pipeStageState[WRITEBACK], WRITEBACK)){
         return 0;
     }
     return 0;
@@ -303,7 +301,7 @@ int _MEM_(Buffer *buffer) {
             if (wide_pipe[MEMORY].branch_taken == true) {
                 branchAddress = (uint32_t) wide_pipe[MEMORY].alu_res;
                 branchSignal = true;
-                push_bubble_counter = 0;
+                hazard_signal = false;
             }
             break;
         default:
@@ -370,7 +368,7 @@ int SIM_CoreReset(void) {
     CORE.pc = NOP;
     /*Reset signals*/
 
-    push_bubble_counter = 0;
+    hazard_signal = false;
     mem_read_failed =false;
     writeBackSignal =false;
     branchSignal = false;
@@ -410,7 +408,7 @@ void SIM_CoreClkTick() {
         return;
     }
     //Buffer hold instruction after IF
-    if(_ID_(&buffer, false) == ERROR){
+    if(_ID_(&buffer, true) == ERROR){
         return;
     }
     //Buffer hold instruction after ID
@@ -427,7 +425,7 @@ void SIM_CoreClkTick() {
     }
     _generateNOP_(&buffer);
     //Decoding again after EXE, MEM and WB is updated
-    if(_ID_(&buffer, true) == ERROR){
+    if(_ID_(&buffer, false) == ERROR){
         return;
     }
 }
