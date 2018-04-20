@@ -68,16 +68,13 @@ static void _flush_pip_(){
 
 /*!This function is the hazard detection unit*/
 static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
-    hazard_signal = false;
-    forwardingMEMSignal = false;
-    forwardingWBSignal = false;
     SIM_cmd_opcode opcode = stage->cmd.opcode;
     if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR
        || opcode == CMD_BREQ || opcode == CMD_BRNEQ || branchSignal){
         return false;
     }
 
-    if(((CORE.pipeStageState[DECODE].cmd.opcode >= CMD_BR && CORE.pipeStageState[DECODE].cmd.opcode <= CMD_BRNEQ) && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.dst) ||
+    if(((CORE.pipeStageState[DECODE].cmd.opcode >= CMD_STORE && CORE.pipeStageState[DECODE].cmd.opcode <= CMD_BRNEQ) && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.dst) ||
        (stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src1) || (!CORE.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src2)){
         //RAW hazard detected
         if(stage_name == EXECUTE){
@@ -110,7 +107,7 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
     return false;
 }
 
-static void _forwarding_unit_(Buffer *from){
+static void _forwarding_unit_(Buffer *from,bool isMEM){
     int forwardData;
     if(from->pip.cmd.opcode == CMD_LOAD){
         forwardData = from->mem_data;
@@ -119,7 +116,7 @@ static void _forwarding_unit_(Buffer *from){
         forwardData = from->alu_res;
     }
     if(wide_pipe[EXECUTE].pip.cmd.dst == from->pip.cmd.dst &&
-            wide_pipe[EXECUTE].pip.cmd.opcode >= CMD_BR &&
+            wide_pipe[EXECUTE].pip.cmd.opcode >= CMD_STORE &&
        wide_pipe[EXECUTE].pip.cmd.opcode <= CMD_BRNEQ ){
         wide_pipe[EXECUTE].dest = forwardData;
     }
@@ -128,8 +125,12 @@ static void _forwarding_unit_(Buffer *from){
         wide_pipe[EXECUTE].pip.src1Val = forwardData;
     if(wide_pipe[EXECUTE].pip.cmd.src2 == from->pip.cmd.dst)
         wide_pipe[EXECUTE].pip.src2Val = forwardData;
-    forwardingWBSignal = false;
-    forwardingMEMSignal = false;
+    if(isMEM){
+        forwardingMEMSignal = false;
+    }
+    else {
+        forwardingWBSignal = false;
+    }
 }
 
 
@@ -211,16 +212,12 @@ static int _ID_(Buffer *buffer, bool advancePip){
 
     CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;//COPY to CORE pipeline
 
-    if(_hazard_detect_unit_(&CORE.pipeStageState[EXECUTE], EXECUTE)){
-        return 0;
+    if(!split_regfile){
+        _hazard_detect_unit_(&CORE.pipeStageState[WRITEBACK], WRITEBACK);
     }
-    if(_hazard_detect_unit_(&CORE.pipeStageState[MEMORY], MEMORY)){
-        return 0;
-    }
-    if(!split_regfile &&
-       _hazard_detect_unit_(&CORE.pipeStageState[WRITEBACK], WRITEBACK)){
-        return 0;
-    }
+    _hazard_detect_unit_(&CORE.pipeStageState[MEMORY], MEMORY);
+    _hazard_detect_unit_(&CORE.pipeStageState[EXECUTE], EXECUTE);
+
     return 0;
 }
 /*!This function is to handling the EXECUTE stage in the pipeline*/
@@ -239,12 +236,10 @@ static int _EXE_(Buffer *buffer) {
 
     if(forwarding){
         if (forwardingWBSignal) {
-            assert(!forwardingMEMSignal);
-            _forwarding_unit_(&(wide_pipe[MEMORY]));
+            _forwarding_unit_(&(wide_pipe[MEMORY]),false);
         }
         if(forwardingMEMSignal){
-            assert(!forwardingWBSignal);
-            _forwarding_unit_(buffer);
+            _forwarding_unit_(buffer,true);
         }
     }
 
