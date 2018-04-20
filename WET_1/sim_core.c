@@ -34,7 +34,7 @@ bool branchSignal;//Flag that indicate if need to branch in next IF
 
 
 /*This Function get buffer and inject into it a NOP*/
-static int __generateNOP(Buffer *nop){
+static int _generateNOP_(Buffer *nop){
     if(nop ==NULL){
         return ERROR;
     }
@@ -54,9 +54,9 @@ static int __generateNOP(Buffer *nop){
 }
 
 /*!flushing the pipeline buffers from IF to EXE and updating PC to branch address*/
-static void __flush_pip(){
+static void _flush_pip_(){
     Buffer nop;
-    __generateNOP(&nop);
+    _generateNOP_(&nop);
     for (int p = FETCH; p <= EXECUTE ; p++){
         wide_pipe[p] = nop;
         CORE.pipeStageState[p] = nop.pip;
@@ -65,7 +65,7 @@ static void __flush_pip(){
 }
 
 /*!This function is the hazard detection unit*/
-static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
+static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
     push_bubble_counter = 0;
     SIM_cmd_opcode opcode = stage->cmd.opcode;
     if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR
@@ -91,7 +91,7 @@ static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
     return false;
 }
 /*!This function is to handling the FETCH stage in the pipeline*/
-static int __IF(Buffer *buffer){
+static int _IF_(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
     }
@@ -101,7 +101,7 @@ static int __IF(Buffer *buffer){
     }
 
     if(branchSignal){
-        __flush_pip();
+        _flush_pip_();
         push_bubble_counter = 0;
         branchSignal = false;
     }
@@ -121,7 +121,7 @@ static int __IF(Buffer *buffer){
 }
 
 /*!This function is to handling the DECODE stage in the pipeline*/
-static int __ID(Buffer *buffer, bool regFileChange){
+static int _ID_(Buffer *buffer, bool regFileChange){
     if(buffer == NULL){
         return ERROR;
     }
@@ -129,7 +129,7 @@ static int __ID(Buffer *buffer, bool regFileChange){
         //Decoding again without fetching from FETCH stage
         if(push_bubble_counter > 0) {
             assert(buffer != NULL);
-            __generateNOP(buffer);
+            _generateNOP_(buffer);
             push_bubble_counter--;
         }
     }
@@ -169,19 +169,19 @@ static int __ID(Buffer *buffer, bool regFileChange){
 
     CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;//COPY to CORE pipeline
 
-    if(__hazard_detect_unit(&CORE.pipeStageState[EXECUTE],EXECUTE)){
+    if(_hazard_detect_unit_(&CORE.pipeStageState[EXECUTE], EXECUTE)){
         return 0;
     }
-    if(__hazard_detect_unit(&CORE.pipeStageState[MEMORY],MEMORY)){
+    if(_hazard_detect_unit_(&CORE.pipeStageState[MEMORY], MEMORY)){
         return 0;
     }
-    if(__hazard_detect_unit(&CORE.pipeStageState[WRITEBACK],WRITEBACK)){
+    if(_hazard_detect_unit_(&CORE.pipeStageState[WRITEBACK], WRITEBACK)){
         return 0;
     }
     return 0;
 }
 /*!This function is to handling the EXECUTE stage in the pipeline*/
-static int __EXE(Buffer *buffer) {
+static int _EXE_(Buffer *buffer) {
     if (buffer == NULL) {
         return ERROR;
     }
@@ -255,7 +255,7 @@ static int __EXE(Buffer *buffer) {
 }
 
 /*!This function is to handling the MEMORY stage in the pipeline*/
-int __MEM(Buffer *buffer) {
+int _MEM_(Buffer *buffer) {
     if (buffer == NULL) {
         return ERROR;
     }
@@ -270,7 +270,7 @@ int __MEM(Buffer *buffer) {
         /*Memory read failed previous cycle NOT fetching from execute and trying to read again
          * inject nop to WB */
         assert(buffer != NULL);
-        __generateNOP(buffer);
+        _generateNOP_(buffer);
         mem_read_failed = false;
     }
 
@@ -313,7 +313,7 @@ int __MEM(Buffer *buffer) {
 }
 
 /*!This function is to handling the WRITEBACK stage in the pipeline*/
-int __WB(Buffer *buffer) {
+int _WB_(Buffer *buffer) {
     if(buffer == NULL){
         return ERROR;
     }
@@ -380,7 +380,7 @@ int SIM_CoreReset(void) {
     }
 
     Buffer nop;
-    if (__generateNOP(&nop) == ERROR) {
+    if (_generateNOP_(&nop) == ERROR) {
         return ERROR;
     }
 
@@ -405,29 +405,29 @@ void SIM_CoreClkTick() {
     }
 
     Buffer buffer;
-    __generateNOP(&buffer);
-    if (__IF(&buffer) == ERROR){
+    _generateNOP_(&buffer);
+    if (_IF_(&buffer) == ERROR){
         return;
     }
     //Buffer hold instruction after IF
-    if(__ID(&buffer,false) == ERROR){
+    if(_ID_(&buffer, false) == ERROR){
         return;
     }
     //Buffer hold instruction after ID
-    if(__EXE(&buffer) == ERROR){
+    if(_EXE_(&buffer) == ERROR){
         return;
     }
     //Buffer hold instruction after EXE with ALU Result
-    if(__MEM(&buffer) == ERROR){
+    if(_MEM_(&buffer) == ERROR){
         return;
     }
     //Buffer hold instruction after MEM with ALU Result
-    if(__WB(&buffer) == ERROR){
+    if(_WB_(&buffer) == ERROR){
         return;
     }
-    __generateNOP(&buffer);
+    _generateNOP_(&buffer);
     //Decoding again after EXE, MEM and WB is updated
-    if(__ID(&buffer,true) == ERROR){
+    if(_ID_(&buffer, true) == ERROR){
         return;
     }
 }
