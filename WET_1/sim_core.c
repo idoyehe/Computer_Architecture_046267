@@ -23,7 +23,7 @@ Buffer wide_pipe[SIM_PIPELINE_DEPTH];//pipeline buffers
 /*!signals*/
 bool hazard_signal;//HDU signal
 
-bool mem_read_failed;//memory signal
+bool memoryFailiureSignal;//memory signal
 
 int writeBackValue;//WB value at the end of pip
 int writeBackRegister;//WB register at the end of pip
@@ -32,6 +32,8 @@ bool writeBackSignal;//Flag that indicate if need to WB when clock rise
 uint32_t branchAddress;//new pc after branch
 bool branchSignal;//Flag that indicate if need to branch in next IF
 
+bool forwardingMEMSignal;
+bool forwardingWBSignal;
 
 /*This Function get buffer and inject into it a NOP*/
 static int _generateNOP_(Buffer *nop){
@@ -67,6 +69,8 @@ static void _flush_pip_(){
 /*!This function is the hazard detection unit*/
 static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
     hazard_signal = false;
+    forwardingMEMSignal = false;
+    forwardingWBSignal = false;
     SIM_cmd_opcode opcode = stage->cmd.opcode;
     if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR
        || opcode == CMD_BREQ || opcode == CMD_BRNEQ || branchSignal){
@@ -77,10 +81,24 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
         //RAW hazard detected
         if(stage_name == EXECUTE){
             hazard_signal = true;
+            if(forwarding){
+                if(stage->cmd.opcode !=CMD_LOAD){
+                    hazard_signal = false;
+                    forwardingMEMSignal = true;
+                }
+                else{
+                    assert(stage->cmd.opcode ==CMD_LOAD);
+                    forwardingMEMSignal = false;
+                }
+            }
             return true;
         }
         if(stage_name == MEMORY){
             hazard_signal = true;
+            if(forwarding){
+                hazard_signal = false;
+                forwardingWBSignal = true;
+            }
             return true;
         }
         if(stage_name == WRITEBACK){
@@ -90,13 +108,33 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
     }
     return false;
 }
+
+static void _forwarding_unit_(Buffer *from){
+    int forwardData;
+    if(from->pip.cmd.opcode == CMD_LOAD){
+        forwardData = from->mem_data;
+    }
+    else{
+        forwardData = from->alu_res;
+    }
+
+    if(wide_pipe[EXECUTE].pip.cmd.src1 == from->pip.cmd.dst)
+        wide_pipe[EXECUTE].pip.src1Val = forwardData;
+    if(wide_pipe[EXECUTE].pip.cmd.src2 == from->pip.cmd.dst)
+        wide_pipe[EXECUTE].pip.src2Val = forwardData;
+    forwardingWBSignal = false;
+    forwardingMEMSignal = false;
+}
+
+
+
 /*!This function is to handling the FETCH stage in the pipeline*/
 static int _IF_(Buffer *buffer){
     if(buffer == NULL){
         return ERROR;
     }
 
-    if(mem_read_failed || hazard_signal) {
+    if(memoryFailiureSignal || hazard_signal) {
         return 0;
     }
 
@@ -127,9 +165,10 @@ static int _ID_(Buffer *buffer, bool advancePip){
     }
 
     if(advancePip){
-        if (mem_read_failed || hazard_signal){
+        if (memoryFailiureSignal || hazard_signal){
             assert(buffer != NULL);
             _generateNOP_(buffer);
+            hazard_signal = false;
         }
         else{
             Buffer temp = *buffer;
@@ -183,7 +222,7 @@ static int _EXE_(Buffer *buffer) {
     if (buffer == NULL) {
         return ERROR;
     }
-    if (mem_read_failed) {
+    if (memoryFailiureSignal) {
         return 0;
     }
 
@@ -191,11 +230,21 @@ static int _EXE_(Buffer *buffer) {
     (*buffer) = wide_pipe[EXECUTE];
     wide_pipe[EXECUTE] = temp;
 
+
+    if(forwarding){
+        if (forwardingWBSignal) {
+            assert(!forwardingMEMSignal);
+            _forwarding_unit_(&(wide_pipe[MEMORY]));
+        }
+        if(forwardingMEMSignal){
+            assert(!forwardingWBSignal);
+            _forwarding_unit_(buffer);
+        }
+    }
+
     CORE.pipeStageState[EXECUTE] = wide_pipe[EXECUTE].pip;
 
     SIM_cmd_opcode cmd_opcode = CORE.pipeStageState[EXECUTE].cmd.opcode;
-
-    //TODO: ADD forwarding unit
 
     //ALU behavior according to cmd opcode
     switch (cmd_opcode) {
@@ -226,7 +275,7 @@ static int _EXE_(Buffer *buffer) {
 
         case CMD_BRNEQ:
             wide_pipe[EXECUTE].branch_taken =
-                    (CORE.pipeStageState->src1Val != CORE.pipeStageState->src2Val);
+                    (CORE.pipeStageState[EXECUTE].src1Val != CORE.pipeStageState[EXECUTE].src2Val);
             wide_pipe[EXECUTE].alu_res =
                     wide_pipe[EXECUTE].pc_after_fetch + wide_pipe[EXECUTE].dest;
             break;
@@ -234,7 +283,7 @@ static int _EXE_(Buffer *buffer) {
 
         case CMD_BREQ:
             wide_pipe[EXECUTE].branch_taken =
-                    (CORE.pipeStageState->src1Val == CORE.pipeStageState->src2Val);
+                    (CORE.pipeStageState[EXECUTE].src1Val == CORE.pipeStageState[EXECUTE].src2Val);
             wide_pipe[EXECUTE].alu_res =
                     wide_pipe[EXECUTE].pc_after_fetch + wide_pipe[EXECUTE].dest;
             break;
@@ -258,7 +307,7 @@ int _MEM_(Buffer *buffer) {
         return ERROR;
     }
 
-    if (!mem_read_failed) {
+    if (!memoryFailiureSignal) {
         /*No memory failure fetching from execute*/
         Buffer temp = *buffer;
         (*buffer) = wide_pipe[MEMORY];
@@ -269,7 +318,7 @@ int _MEM_(Buffer *buffer) {
          * inject nop to WB */
         assert(buffer != NULL);
         _generateNOP_(buffer);
-        mem_read_failed = false;
+        memoryFailiureSignal = false;
     }
 
     SIM_cmd_opcode cmd_opcode = CORE.pipeStageState[MEMORY].cmd.opcode;
@@ -290,7 +339,7 @@ int _MEM_(Buffer *buffer) {
             break;
 
         case CMD_LOAD:
-            mem_read_failed =
+            memoryFailiureSignal =
                     (SIM_MemDataRead((uint32_t) wide_pipe[MEMORY].alu_res,
                                      &(wide_pipe[MEMORY].mem_data)) == ERROR);
             break;
@@ -369,9 +418,11 @@ int SIM_CoreReset(void) {
     /*Reset signals*/
 
     hazard_signal = false;
-    mem_read_failed =false;
+    memoryFailiureSignal =false;
     writeBackSignal =false;
     branchSignal = false;
+    forwardingMEMSignal = false;
+    forwardingWBSignal = false;
 
     for (int r = 0; r < SIM_REGFILE_SIZE; r++) {
         CORE.regFile[r] = NOP;
@@ -396,7 +447,7 @@ int SIM_CoreReset(void) {
 */
 void SIM_CoreClkTick() {
 
-    if(writeBackSignal && !split_regfile){//case need to WB whe clock rise
+    if(writeBackSignal){//case need to WB when clock rise
         CORE.regFile[writeBackRegister] = writeBackValue;
         writeBackSignal = false;
         writeBackValue = ERROR;
