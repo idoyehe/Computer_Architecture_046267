@@ -83,7 +83,7 @@ static bool __hazard_detect_unit(PipeStageState *stage, pipeStage stage_name){
             push_bubble_counter = 2;
             return true;
         }
-        if(stage_name == WRITEBACK && writeBackSignal){
+        if(stage_name == WRITEBACK){
             push_bubble_counter = 1;
             return true;
         }
@@ -139,6 +139,7 @@ static int __ID(Buffer *buffer, bool regFileChange){
         (*buffer) = wide_pipe[DECODE];
 
         wide_pipe[DECODE] = temp;
+        return 0;
     }
 
     CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;
@@ -168,8 +169,7 @@ static int __ID(Buffer *buffer, bool regFileChange){
 
     CORE.pipeStageState[DECODE] = wide_pipe[DECODE].pip;//COPY to CORE pipeline
 
-    if(__hazard_detect_unit(&CORE.pipeStageState[EXECUTE],EXECUTE)||
-            __hazard_detect_unit(&(buffer->pip),EXECUTE)){
+    if(__hazard_detect_unit(&CORE.pipeStageState[EXECUTE],EXECUTE)){
         return 0;
     }
     if(__hazard_detect_unit(&CORE.pipeStageState[MEMORY],MEMORY)){
@@ -426,7 +426,8 @@ void SIM_CoreClkTick() {
         return;
     }
     __generateNOP(&buffer);
-    if(split_regfile && __ID(&buffer,true) == ERROR){
+    //Decoding again after EXE, MEM and WB is updated
+    if(__ID(&buffer,true) == ERROR){
         return;
     }
 }
