@@ -30,12 +30,12 @@ int writeBackRegister;//WB register at the end of pip
 bool writeBackSignal;//Flag that indicate if need to WB when clock rise
 
 uint32_t branchAddress;//new pc after branch
-bool branchSignal;//Flag that indicate if need to branch in next IF
+bool branchSignal;//signal that indicate if need to branch in next IF
 
-bool forwardingMEMSignal;
-bool forwardingWBSignal;
+bool forwardingMEMSignal;//signal that indicate if need to forwarding from memory stage
+bool forwardingWBSignal;//signal that indicate if need to forwarding from writeBack stage
 
-/*This Function get buffer and inject into it a NOP*/
+/*!This Function get buffer and inject into it a NOP*/
 static int _generateNOP_(Buffer *nop){
     if(nop ==NULL){
         return ERROR;
@@ -85,7 +85,8 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
                     forwardingMEMSignal = true;
                 }
                 else{
-                    assert(stage->cmd.opcode ==CMD_LOAD);
+                    //perform hazard logic and in the next cycle does forwarding
+                    assert(stage->cmd.opcode == CMD_LOAD);
                     forwardingMEMSignal = false;
                 }
             }
@@ -107,7 +108,8 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
     return false;
 }
 
-static void _forwarding_unit_(Buffer *from,bool isMEM){
+/*!This function is the forwarding unit*/
+static void _forwarding_unit_(Buffer *from){
     int forwardData;
     if(from->pip.cmd.opcode == CMD_LOAD){
         forwardData = from->mem_data;
@@ -115,9 +117,9 @@ static void _forwarding_unit_(Buffer *from,bool isMEM){
     else{
         forwardData = from->alu_res;
     }
-    if(wide_pipe[EXECUTE].pip.cmd.dst == from->pip.cmd.dst &&
-            wide_pipe[EXECUTE].pip.cmd.opcode >= CMD_STORE &&
-       wide_pipe[EXECUTE].pip.cmd.opcode <= CMD_BRNEQ ){
+
+    if((wide_pipe[EXECUTE].pip.cmd.opcode >= CMD_STORE && wide_pipe[EXECUTE].pip.cmd.opcode <= CMD_BRNEQ)
+            && (wide_pipe[EXECUTE].pip.cmd.dst == from->pip.cmd.dst)){
         wide_pipe[EXECUTE].dest = forwardData;
     }
 
@@ -125,15 +127,15 @@ static void _forwarding_unit_(Buffer *from,bool isMEM){
         wide_pipe[EXECUTE].pip.src1Val = forwardData;
     if(wide_pipe[EXECUTE].pip.cmd.src2 == from->pip.cmd.dst)
         wide_pipe[EXECUTE].pip.src2Val = forwardData;
-    if(isMEM){
-        forwardingMEMSignal = false;
-    }
-    else {
+    if(forwardingWBSignal){
         forwardingWBSignal = false;
     }
+    else {
+        assert(forwardingMEMSignal);
+        assert(!forwardingWBSignal);
+        forwardingMEMSignal = false;
+    }
 }
-
-
 
 /*!This function is to handling the FETCH stage in the pipeline*/
 static int _IF_(Buffer *buffer){
@@ -151,7 +153,7 @@ static int _IF_(Buffer *buffer){
         branchSignal = false;
     }
 
-     CORE.pc+=4;
+    CORE.pc+=4;
     (*buffer) = wide_pipe[FETCH];
     PipeStageState instruction;
     instruction.src1Val = NOP;
@@ -217,9 +219,9 @@ static int _ID_(Buffer *buffer, bool advancePip){
     }
     _hazard_detect_unit_(&CORE.pipeStageState[MEMORY], MEMORY);
     _hazard_detect_unit_(&CORE.pipeStageState[EXECUTE], EXECUTE);
-
     return 0;
 }
+
 /*!This function is to handling the EXECUTE stage in the pipeline*/
 static int _EXE_(Buffer *buffer) {
     if (buffer == NULL) {
@@ -236,10 +238,10 @@ static int _EXE_(Buffer *buffer) {
 
     if(forwarding){
         if (forwardingWBSignal) {
-            _forwarding_unit_(&(wide_pipe[MEMORY]),false);
+            _forwarding_unit_(&(wide_pipe[MEMORY]));
         }
         if(forwardingMEMSignal){
-            _forwarding_unit_(buffer,true);
+            _forwarding_unit_(buffer);
         }
     }
 
@@ -403,8 +405,6 @@ int _WB_(Buffer *buffer) {
     }
     return 0;
 }
-
-
 
 /*! SIM_CoreReset: Reset the processor core simulator machine to start new simulation
   Use this API to initialize the processor core simulator's data structures.
