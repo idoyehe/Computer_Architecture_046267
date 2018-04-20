@@ -76,8 +76,9 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
        || opcode == CMD_BREQ || opcode == CMD_BRNEQ || branchSignal){
         return false;
     }
-    if(stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src1 ||
-       (!CORE.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src2)){
+
+    if(((CORE.pipeStageState[DECODE].cmd.opcode >= CMD_BR && CORE.pipeStageState[DECODE].cmd.opcode <= CMD_BRNEQ) && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.dst) ||
+       (stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src1) || (!CORE.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src2)){
         //RAW hazard detected
         if(stage_name == EXECUTE){
             hazard_signal = true;
@@ -116,6 +117,11 @@ static void _forwarding_unit_(Buffer *from){
     }
     else{
         forwardData = from->alu_res;
+    }
+    if(wide_pipe[EXECUTE].pip.cmd.dst == from->pip.cmd.dst &&
+            wide_pipe[EXECUTE].pip.cmd.opcode >= CMD_BR &&
+       wide_pipe[EXECUTE].pip.cmd.opcode <= CMD_BRNEQ ){
+        wide_pipe[EXECUTE].dest = forwardData;
     }
 
     if(wide_pipe[EXECUTE].pip.cmd.src1 == from->pip.cmd.dst)
