@@ -68,16 +68,30 @@ static void _flush_pip_(){
 
 /*!This function is the hazard detection unit*/
 static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
-    SIM_cmd_opcode opcode = stage->cmd.opcode;
-    if(opcode == CMD_NOP || opcode == CMD_HALT || opcode == CMD_BR
-       || opcode == CMD_BREQ || opcode == CMD_BRNEQ || branchSignal){
+    if(branchSignal){
         return false;
     }
 
-    if(((CORE.pipeStageState[DECODE].cmd.opcode >= CMD_STORE && CORE.pipeStageState[DECODE].cmd.opcode <= CMD_BRNEQ) && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.dst) ||
-       (stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src1) || (!CORE.pipeStageState[DECODE].cmd.isSrc2Imm && stage->cmd.dst == CORE.pipeStageState[DECODE].cmd.src2)){
+    SIM_cmd stage_cmd = stage->cmd;
+
+    switch (stage_cmd.opcode){
+        case CMD_NOP:
+        case CMD_HALT:
+        case CMD_STORE:
+        case CMD_BR:
+        case CMD_BREQ:
+        case CMD_BRNEQ:
+            return false;
+        default:
+            break;
+    }
+
+    SIM_cmd decode_cmd = CORE.pipeStageState[DECODE].cmd;
+    bool _hazard_stage_ = ((decode_cmd.opcode >= CMD_STORE && decode_cmd.opcode <= CMD_BRNEQ) && stage_cmd.dst == decode_cmd.dst)
+                    ||stage_cmd.dst == decode_cmd.src1 || ((!(decode_cmd.isSrc2Imm)) && stage_cmd.dst == decode_cmd.src2);
+
         //RAW hazard detected
-        if(stage_name == EXECUTE){
+        if(_hazard_stage_ && stage_name == EXECUTE){
             hazard_signal = true;
             if(forwarding){
                 if(stage->cmd.opcode !=CMD_LOAD){
@@ -92,7 +106,7 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
             }
             return true;
         }
-        if(stage_name == MEMORY){
+        if(_hazard_stage_ && stage_name == MEMORY){
             hazard_signal = true;
             if(forwarding){
                 hazard_signal = false;
@@ -100,11 +114,10 @@ static bool _hazard_detect_unit_(PipeStageState *stage, pipeStage stage_name){
             }
             return true;
         }
-        if(stage_name == WRITEBACK){
+        if(_hazard_stage_ && stage_name == WRITEBACK){
             hazard_signal = true;
             return true;
         }
-    }
     return false;
 }
 
@@ -127,6 +140,7 @@ static void _forwarding_unit_(Buffer *from){
         wide_pipe[EXECUTE].pip.src1Val = forwardData;
     if(wide_pipe[EXECUTE].pip.cmd.src2 == from->pip.cmd.dst)
         wide_pipe[EXECUTE].pip.src2Val = forwardData;
+
     if(forwardingWBSignal){
         forwardingWBSignal = false;
     }
