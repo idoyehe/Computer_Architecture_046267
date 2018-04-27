@@ -1,7 +1,7 @@
 /* 046267 Computer Architecture - Spring 2017 - HW #1 */
 /* API for the in-order pipelined processor simulator */
 
-#ifndef _SIM_API_H_k
+#ifndef _SIM_API_H_
 #define _SIM_API_H_
 
 #ifdef __cplusplus
