@@ -6,6 +6,7 @@
 #define OK 0
 #define MAX_BTB 32
 #define MAX_HISTORY 256
+#define PC_ALIGN 30
 
 
 typedef enum{ SNT = 0, WNT = 1, WT = 2, ST = 3} FSM;
@@ -211,11 +212,29 @@ int indexTwoBitCounter(BTBTable *btbTable,uint32_t pc) {
 }
 
 BTBTable globalBTBTable;
-
+SIM_stats globalStat;
 
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
+    globalStat.size = 0;
+    globalStat.size += btbSize * (tagSize + PC_ALIGN);
+    if (isGlobalHist == true){
+        globalStat.size += historySize;
+    }
+    else
+        globalStat.size +=btbSize * historySize;
+    int tableSize = 2;
+    for(int i = 0; i < historySize ;i++){
+        tableSize *=2;
+    }
+
+    if(isGlobalTable){
+        globalStat.size +=  tableSize;
+    }
+    else
+        globalStat.size +=  btbSize * tableSize;
+
     return initBTBTable(&globalBTBTable,btbSize,historySize,tagSize,isGlobalHist,isGlobalTable,Shared);
 }
 
