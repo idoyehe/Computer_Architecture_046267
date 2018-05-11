@@ -187,7 +187,7 @@ int indexTwoBitCounter(BTBTable *btbTable,uint32_t pc) {
         return ERROR;
     }
     History *currHistory = &(btbTable->globalHistory);
-    if (btbTable->localHistory) {
+    if (!(btbTable->isGlobalHist)) {
         int indexHistory = indexBTBEntryCalc(btbTable, pc);
         currHistory = btbTable->localHistory + indexHistory;
     }
