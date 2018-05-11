@@ -4,7 +4,7 @@
 #include "bp_api.h"
 #include <stdio.h>
 
-#define ERROR -1
+#define ERROR (-1)
 #define OK 0
 #define MAX_BTB 32
 #define MAX_HISTORY 256
