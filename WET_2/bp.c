@@ -2,6 +2,8 @@
 /* This file should hold your implementation of the predictor simulator */
 
 #include "bp_api.h"
+#include <stdio.h>
+
 #define ERROR -1
 #define OK 0
 #define MAX_BTB 32
@@ -48,12 +50,12 @@ CALL getTwoBitCounterResult(TwoBitCounter *FSM){
 }
 
 typedef struct{
-	int bitSize;
+    unsigned bitSize;
 	uint8_t history;
 	uint8_t mask;
 }History;
 
-int initHistory(History *history,int bitSize){
+int initHistory(History *history, unsigned bitSize){
 	if(bitSize < 1 || bitSize > 8 || history == NULL){
 		return ERROR;
 	}
