@@ -7,7 +7,8 @@
 #define MAX_BTB 32
 #define MAX_HISTORY 256
 #define PC_ALIGN 30
-
+#define SHARE_LSB 2
+#define SHARE_MID 16
 
 typedef enum{ SNT = 0, WNT = 1, WT = 2, ST = 3} FSM;
 typedef enum{NOT_TAKEN = -1, TAKEN = 1}CALL;
@@ -67,7 +68,7 @@ int initHistory(History *history,int bitSize){
 }
 
 void updateHistory(History *history,CALL call){
-    history->history *= 2;
+    history->history = history->history << 1;
     if (call == TAKEN) {
         history->history++;
     }
@@ -95,7 +96,7 @@ int initBTBEntry(BTBEntry *btbEntry,int tagBitSize){
     btbEntry->tag = 0;
     btbEntry->target =0;
     for(int i = 0; i < tagBitSize; i++){
-        btbEntry->tagMask*=2;
+        btbEntry->tagMask = btbEntry->tagMask << 1;
         btbEntry->tagMask++;
     }
     return OK;
@@ -135,12 +136,12 @@ int initBTBTable(BTBTable *btbTable,unsigned btbSize, unsigned historySize, unsi
     btbTable->shared = shared;
     int logBtbSize=0;
     while(btbSize > 1){
-        btbSize/=2;
+        btbSize = btbSize >> 1;
         logBtbSize++;
     }
     btbTable->indexMask = 0;
     for(int i = 0;i < logBtbSize ; i++){
-        btbTable->indexMask *=2;
+        btbTable->indexMask = btbTable->indexMask << 1;
         btbTable->indexMask ++;
 
     }
@@ -175,7 +176,7 @@ int indexBTBEntryCalc(BTBTable *btbTable,uint32_t pc){
     if(btbTable == NULL){
         return ERROR;
     }
-    pc /= 4;
+    pc = pc >> 2;//remove 2 LSB
     return (pc & btbTable ->indexMask);//calculating index for btbEntry
 }
 
@@ -190,50 +191,48 @@ int indexTwoBitCounter(BTBTable *btbTable,uint32_t pc) {
     }
     uint8_t rawIndexTwoBitCounter = getFSMIndex(currHistory);
     if (btbTable->isGlobalHist || btbTable->isGlobalTable) {
+        uint8_t calcadPC = 0;
         switch (btbTable->shared) {
             case NOT_SHARED:
                 return rawIndexTwoBitCounter;
             case LSB: {
-                uint8_t calcadPC = (uint8_t) (pc / 4);
-                uint8_t lsb = calcadPC ^rawIndexTwoBitCounter;
-                rawIndexTwoBitCounter /= 2;
-                rawIndexTwoBitCounter *= 2;
-                rawIndexTwoBitCounter += lsb;
-                return rawIndexTwoBitCounter & currHistory->mask;
+                calcadPC = (uint8_t) (pc >> SHARE_LSB);
+                break;
             }
             case MID: {
-                uint8_t calcadPC = (uint8_t) (pc / 65536);
-                rawIndexTwoBitCounter =  calcadPC ^ rawIndexTwoBitCounter;
-                return rawIndexTwoBitCounter & currHistory ->mask;
+                calcadPC = (uint8_t) (pc >> SHARE_MID);
+                break;
             }
         }
+        rawIndexTwoBitCounter =  calcadPC ^ rawIndexTwoBitCounter;
+        return rawIndexTwoBitCounter & currHistory ->mask;
     }
     return rawIndexTwoBitCounter;
 }
 
 BTBTable globalBTBTable;
-SIM_stats globalStat;
+SIM_stats globalState;
 
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
-    globalStat.size = 0;
-    globalStat.size += btbSize * (tagSize + PC_ALIGN);
+    globalState.size = 0;
+    globalState.size += btbSize * (tagSize + PC_ALIGN);
     if (isGlobalHist == true){
-        globalStat.size += historySize;
+        globalState.size += historySize;
     }
     else
-        globalStat.size +=btbSize * historySize;
+        globalState.size +=btbSize * historySize;
     int tableSize = 2;
     for(int i = 0; i < historySize ;i++){
         tableSize *=2;
     }
 
     if(isGlobalTable){
-        globalStat.size +=  tableSize;
+        globalState.size +=  tableSize;
     }
     else
-        globalStat.size +=  btbSize * tableSize;
+        globalState.size +=  btbSize * tableSize;
 
     return initBTBTable(&globalBTBTable,btbSize,historySize,tagSize,isGlobalHist,isGlobalTable,Shared);
 }
@@ -247,5 +246,10 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
 }
 
 void BP_GetStats(SIM_stats *curStats) {
-	return;
+    if(curStats == NULL){
+        return;
+    }
+    curStats->size = globalState.size;
+    curStats->br_num = globalState.br_num;
+    curStats->flush_num = globalState.flush_num;
 }
