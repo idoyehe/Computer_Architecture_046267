@@ -187,7 +187,7 @@ int indexTwoBitCounter(BTBTable *btbTable,uint32_t pc) {
         return ERROR;
     }
     History *currHistory = &(btbTable->globalHistory);
-    if (btbTable->localHistory) {
+    if (!(btbTable->isGlobalHist)) {
         int indexHistory = indexBTBEntryCalc(btbTable, pc);
         currHistory = btbTable->localHistory + indexHistory;
     }
@@ -218,8 +218,7 @@ SIM_stats globalState;
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
-    globalState.size = 0;
-    globalState.size += btbSize * (tagSize + PC_ALIGN);
+    globalState.size = btbSize * (tagSize + PC_ALIGN);
     if (isGlobalHist == true){
         globalState.size += historySize;
     }

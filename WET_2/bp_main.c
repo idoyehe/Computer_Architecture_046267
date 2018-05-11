@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
 //		exit(8);
 //	}
 
-	if (BP_init(2, 2, 30, true,true, 0) < 0) {
+	if (BP_init(2, 2, 2, true,true, 0) < 0) {
 		fprintf(stderr, "Predictor init failed\n");
 		exit(8);
 	}
