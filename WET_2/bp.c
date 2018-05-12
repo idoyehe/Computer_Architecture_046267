@@ -132,7 +132,7 @@ typedef struct{
 
 int initBranchPredictor(BranchPredictor *branchPredictor, unsigned btbSize, unsigned historySize, unsigned tagSize,
                         bool isGlobalHist, bool isGlobalTable, Shared shared){
-    if(branchPredictor == NULL || (btbSize != 2 && btbSize != 4 && btbSize != 8 && btbSize != 16 && btbSize != 32 )){
+    if(branchPredictor == NULL || (btbSize != 1 && btbSize != 2 && btbSize != 4 && btbSize != 8 && btbSize != 16 && btbSize != 32 )){
         return ERROR;
     }
     branchPredictor->isGlobalHist = isGlobalHist;
@@ -271,17 +271,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     globalState.br_num++;
-    CALL branchCall;
-    if(targetPc != pred_dst){
-        branchCall = NOT_TAKEN;
-    }
-    else{
-        branchCall = TAKEN;
-    }
-    if(branchCall == TAKEN && !taken && pred_dst != (pc + 4)){
-        globalState.flush_num++;
-    }
-    if(branchCall == NOT_TAKEN && taken){
+    if((pred_dst != (pc + 4)  && !taken )|| (pred_dst != targetPc && taken)){
         globalState.flush_num++;
     }
 

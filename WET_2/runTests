@@ -1,0 +1,39 @@
+#!/bin/bash
+
+#test automation script
+INPUT_DIR="rand_tests"
+OUT_DIR="rand_results"
+MY_OUT_DIR_NAME="my_out"
+OUT_BIN="bp_main"
+
+echo -e 'converting tests to UNIX format: '
+dos2unix $INPUT_DIR/*
+echo -e 'converting source to UNIX format: '
+dos2unix *.h *.c *.cpp
+echo -e 'building... '
+make clean
+make
+chmod 777 $OUT_BIN
+
+#remove the directory if it exists, to create a new empty one for the new run.
+if [[  -e $MY_OUT_DIR_NAME ]]; then
+	rm -rf $mkdir $MY_OUT_DIR_NAME
+fi
+mkdir $MY_OUT_DIR_NAME
+
+number_of_tests=`ls -l $INPUT_DIR | grep in* | wc -l`
+echo -e 'number of tests to run: ' ${number_of_tests}
+for i in `seq 1 $number_of_tests` ; do
+	echo 'running test  ex'$i'_in.txt'
+	testFile=$INPUT_DIR/'ex'$i'_in.txt'
+	./$OUT_BIN $testFile > $MY_OUT_DIR_NAME/'myout_'$i
+	if [ `diff $OUT_DIR/'ex'$i'_out.txt' $MY_OUT_DIR_NAME/'myout_'$i | wc -w` -eq 0 ] ; then 
+		echo -e "     Passed!"
+
+	else 
+		echo -e "     Failed."
+	fi
+done
+echo -e 'cleaning directory '
+make clean
+#rm -rf $MY_OUT_DIR_NAME
