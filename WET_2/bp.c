@@ -16,9 +16,11 @@ typedef enum{ SNT = 0, WNT = 1, WT = 2, ST = 3} FSM;
 typedef enum{NOT_TAKEN = -1, TAKEN = 1}CALL;
 typedef enum{NOT_SHARED = 0, LSB = 1, MID = 2}Shared;
 
+/*wrapper for the FSM*/
 typedef struct {
 	FSM fsm;
 }TwoBitCounter;
+
 
 int initTwoBitCounter(TwoBitCounter *fsm){
 	if(fsm == NULL)
@@ -26,7 +28,7 @@ int initTwoBitCounter(TwoBitCounter *fsm){
 	fsm->fsm = WNT;
 	return OK;
 }
-
+/*Handle the FSM behavior*/
 int updateTwoBitCounter(TwoBitCounter *FSM,CALL call){
 	if(FSM == NULL)
 		return ERROR;
@@ -41,14 +43,14 @@ int updateTwoBitCounter(TwoBitCounter *FSM,CALL call){
 	FSM->fsm = state;
 	return OK;
 }
-
+/*Transform FSM state to predictor call*/
 CALL getTwoBitCounterResult(TwoBitCounter *FSM){
 	if(FSM->fsm > WNT){
 		return TAKEN;
 	}
 	return NOT_TAKEN;
 }
-
+/*history wrapper*/
 typedef struct{
     unsigned bitSize;
 	uint8_t history;
@@ -62,13 +64,14 @@ int initHistory(History *history, unsigned bitSize){
 	history->bitSize = bitSize;
 	history->history = 0;
 	history->mask = 0;
+	//generating history mask to get index for FSM
     for(int i = 0; i<bitSize; i++){
         history->mask = history->mask << 1;
         history->mask++;
     }
 	return OK;
 }
-
+/*updating history with given call*/
 void updateHistory(History *history,CALL call){
     history->history = history->history << 1;
     if (call == TAKEN) {
@@ -77,14 +80,17 @@ void updateHistory(History *history,CALL call){
     history->history = history->history & history->mask; //history AND mask
 }
 
+/*reset history to 0*/
 void resetHistory(History *history){
     history->history = 0;
 }
 
+/*return from the history the FSM index*/
 uint8_t getFSMIndex(History *history){
     return (history->history & history ->mask);
 }
 
+/*BTB entry wrapper*/
 typedef struct{
     uint32_t tag;
     uint32_t tagMask;
@@ -98,13 +104,14 @@ int initBTBEntry(BTBEntry *btbEntry,int tagBitSize){
     btbEntry->tag = 0;
     btbEntry->target = 0;
     btbEntry->tagMask = 0;
+    //generating mask for saving tag
     for(int i = 0; i < tagBitSize; i++){
         btbEntry->tagMask = btbEntry->tagMask << 1;
         btbEntry->tagMask++;
     }
     return OK;
 }
-
+/*updating btb with given parameters*/
 int updateBTBEntry(BTBEntry *btbEntry,uint32_t pc, uint32_t targetPc){
     if(btbEntry == NULL){
         return ERROR;
@@ -114,7 +121,7 @@ int updateBTBEntry(BTBEntry *btbEntry,uint32_t pc, uint32_t targetPc){
     btbEntry->target = targetPc;
     return OK;
 }
-
+/*Branch Predictor wrapper*/
 typedef struct{
     BTBEntry btbTable[MAX_BTB];
     uint32_t indexMask;
@@ -178,7 +185,7 @@ int initBranchPredictor(BranchPredictor *branchPredictor, unsigned btbSize, unsi
 
     return OK;
 }
-
+/*given pc return the index in the btb table*/
 int getIndexBTBEntry(BranchPredictor *btbTable, uint32_t pc){
     if(btbTable == NULL){
         return ERROR;
@@ -187,6 +194,7 @@ int getIndexBTBEntry(BranchPredictor *btbTable, uint32_t pc){
     return (pc & btbTable ->indexMask);//calculating index for btbEntry
 }
 
+/*given pc return the index of the FSM basing on it's history*/
 int getIndexTwoBitCounter(BranchPredictor *btbTable,uint32_t pc) {
     if (btbTable == NULL) {
         return ERROR;
@@ -201,12 +209,12 @@ int getIndexTwoBitCounter(BranchPredictor *btbTable,uint32_t pc) {
     switch (btbTable->shared) {
         case NOT_SHARED:
             return rawIndexTwoBitCounter;
-        case LSB: {
+        case LSB: {//for share LSB
             calcadPC = (uint8_t) (pc >> SHARE_LSB);
             rawIndexTwoBitCounter = calcadPC ^ rawIndexTwoBitCounter;
             break;
         }
-        case MID: {
+        case MID: {//for share MID
             calcadPC = (uint8_t) (pc >> SHARE_MID);
             rawIndexTwoBitCounter = calcadPC ^ rawIndexTwoBitCounter;
             break;
@@ -221,6 +229,7 @@ SIM_stats globalState;
 
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
              bool isGlobalHist, bool isGlobalTable, int Shared){
+    /*size calculating*/
     globalState.size = btbSize * (tagSize + PC_ALIGN);
     if (isGlobalHist == true){
         globalState.size += historySize;
@@ -248,12 +257,12 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
     initBTBEntry(&tempEntry,globalBranchPred.tagSize);
     updateBTBEntry(&tempEntry,pc,0);
 
-    if(globalBranchPred.btbTable[btbIndex].tag != tempEntry.tag){
+    if(globalBranchPred.btbTable[btbIndex].tag != tempEntry.tag){//unknown PC
         (*dst) = pc +4;
         return false;
     }
 
-    int fsmIndex = getIndexTwoBitCounter(&globalBranchPred,pc);
+    int fsmIndex = getIndexTwoBitCounter(&globalBranchPred,pc);//get FSM index
     CALL branchCall;
     if(globalBranchPred.isGlobalTable){
         branchCall = getTwoBitCounterResult(globalBranchPred.globalFSM+fsmIndex);
@@ -271,7 +280,7 @@ bool BP_predict(uint32_t pc, uint32_t *dst){
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     globalState.br_num++;
-    if((pred_dst != (pc + 4)  && !taken )|| (pred_dst != targetPc && taken)){
+    if((pred_dst != (pc + 4)  && !taken )|| (pred_dst != targetPc && taken)){//need flash
         globalState.flush_num++;
     }
 
@@ -281,7 +290,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     updateBTBEntry(&tempEntry,pc,targetPc);
 
     if(globalBranchPred.btbTable[btbIndex].tag != tempEntry.tag){
-        //case new branch ins get in init local history and local FSM
+        //clean the local history and local FSM table for new Branch ins.
         initHistory(globalBranchPred.localHistory + btbIndex,globalBranchPred.historySize);
         for(int i = 0; i < MAX_HISTORY; i++) {
             initTwoBitCounter(&(globalBranchPred.localFSM[btbIndex][i]));
@@ -291,7 +300,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     CALL actualCall = taken ? TAKEN : NOT_TAKEN;
 
     int tableIndex = getIndexTwoBitCounter(&globalBranchPred,pc);
-
+    //first updating FSM
     if(globalBranchPred.isGlobalTable){
         updateTwoBitCounter(globalBranchPred.globalFSM + tableIndex,actualCall);
     }
@@ -299,7 +308,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
     else{
         updateTwoBitCounter(&(globalBranchPred.localFSM[btbIndex][tableIndex]),actualCall);
     }
-
+    //second updating history
     if(globalBranchPred.isGlobalHist){
         updateHistory(&globalBranchPred.globalHistory,actualCall);
     }
@@ -309,6 +318,7 @@ void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
 }
 
 void BP_GetStats(SIM_stats *curStats) {
+    //exporting state
     if(curStats == NULL){
         return;
     }

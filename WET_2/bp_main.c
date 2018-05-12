@@ -11,13 +11,12 @@
 
 int main(int argc, char **argv) {
 
-//	if (argc < 2) {
-//		fprintf(stderr, "Usage: %s <trace filename>\n", argv[0]);
-//		exit(1);
-//	}
+	if (argc < 2) {
+		fprintf(stderr, "Usage: %s <trace filename>\n", argv[0]);
+		exit(1);
+	}
 
-//	FILE *trace = fopen(argv[1], "r");
-	FILE *trace = fopen("/Users/IdoYehe/CLionProjects/Computer_Architecture_046267/WET_2/rand_tests/ex6_in.txt", "r");
+	FILE *trace = fopen(argv[1], "r");
 	if (trace == 0) {
 		fprintf(stderr, "cannot open trace file\n");
 		exit(2);
@@ -72,7 +71,8 @@ int main(int argc, char **argv) {
 		exit(7);
 	}
 
-	if (BP_init(btbSize, historySize, tagSize, isGlobalHist, isGlobalTable, Shared) < 0) {
+	if (BP_init(btbSize, historySize, tagSize, isGlobalHist,
+			isGlobalTable, Shared) < 0) {
 		fprintf(stderr, "Predictor init failed\n");
 		exit(8);
 	}
