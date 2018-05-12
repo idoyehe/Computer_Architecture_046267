@@ -96,7 +96,8 @@ int initBTBEntry(BTBEntry *btbEntry,int tagBitSize){
         return ERROR;
     }
     btbEntry->tag = 0;
-    btbEntry->target =0;
+    btbEntry->target = 0;
+    btbEntry->tagMask = 0;
     for(int i = 0; i < tagBitSize; i++){
         btbEntry->tagMask = btbEntry->tagMask << 1;
         btbEntry->tagMask++;
@@ -108,7 +109,7 @@ int updateBTBEntry(BTBEntry *btbEntry,uint32_t pc, uint32_t targetPc){
     if(btbEntry == NULL){
         return ERROR;
     }
-    pc /= 4;
+    pc = pc >> 2;
     btbEntry->tag = pc & btbEntry->tagMask;
     btbEntry->target = targetPc;
     return OK;
@@ -124,48 +125,52 @@ typedef struct{
     bool isGlobalHist;
     bool isGlobalTable;
     unsigned btbSize;
+    unsigned tagSize;
+    unsigned historySize;
     Shared shared;
-}BTBTable;
+}BranchPredictor;
 
-int initBTBTable(BTBTable *btbTable,unsigned btbSize, unsigned historySize, unsigned tagSize,
-            bool isGlobalHist, bool isGlobalTable, Shared shared){
-    if(btbTable == NULL || (btbSize != 2 && btbSize != 4 && btbSize != 8 && btbSize != 16 && btbSize != 32 )){
+int initBranchPredictor(BranchPredictor *branchPredictor, unsigned btbSize, unsigned historySize, unsigned tagSize,
+                        bool isGlobalHist, bool isGlobalTable, Shared shared){
+    if(branchPredictor == NULL || (btbSize != 2 && btbSize != 4 && btbSize != 8 && btbSize != 16 && btbSize != 32 )){
         return ERROR;
     }
-    btbTable->isGlobalHist = isGlobalHist;
-    btbTable->isGlobalTable =isGlobalTable;
-    btbTable->btbSize = btbSize;
-    btbTable->shared = shared;
+    branchPredictor->isGlobalHist = isGlobalHist;
+    branchPredictor->isGlobalTable =isGlobalTable;
+    branchPredictor->btbSize = btbSize;
+    branchPredictor->tagSize = tagSize;
+    branchPredictor->shared = shared;
+    branchPredictor->historySize = historySize;
     int logBtbSize=0;
     while(btbSize > 1){
         btbSize = btbSize >> 1;
         logBtbSize++;
     }
-    btbTable->indexMask = 0;
+    branchPredictor->indexMask = 0;
     for(int i = 0;i < logBtbSize ; i++){
-        btbTable->indexMask = btbTable->indexMask << 1;
-        btbTable->indexMask ++;
+        branchPredictor->indexMask = branchPredictor->indexMask << 1;
+        branchPredictor->indexMask ++;
 
     }
     for(int i = 0; i < MAX_BTB;i++){
-        if(initBTBEntry(btbTable->btbTable + i,tagSize) == ERROR){
+        if(initBTBEntry(branchPredictor->btbTable + i,tagSize) == ERROR){
             return ERROR;
         }
     }
     for(int i = 0; i < MAX_HISTORY; i++){
-        if(initHistory(btbTable->localHistory +i,historySize) == ERROR){
+        if(initHistory(branchPredictor->localHistory +i,historySize) == ERROR){
             return ERROR;
         }
-        if(initTwoBitCounter(btbTable->globalFSM +i) == ERROR){
+        if(initTwoBitCounter(branchPredictor->globalFSM +i) == ERROR){
             return ERROR;
         }
     }
-    if(initHistory(&(btbTable->globalHistory),historySize) == ERROR){
+    if(initHistory(&(branchPredictor->globalHistory),historySize) == ERROR){
         return ERROR;
     }
     for(int i = 0; i < MAX_BTB; i++){
         for(int j = 0; j < MAX_HISTORY; j++) {
-            if (initTwoBitCounter(&(btbTable->localFSM[i][j])) == ERROR) {
+            if (initTwoBitCounter(&(branchPredictor->localFSM[i][j])) == ERROR) {
                 return ERROR;
             }
         }
@@ -174,7 +179,7 @@ int initBTBTable(BTBTable *btbTable,unsigned btbSize, unsigned historySize, unsi
     return OK;
 }
 
-int indexBTBEntryCalc(BTBTable *btbTable,uint32_t pc){
+int getIndexBTBEntry(BranchPredictor *btbTable, uint32_t pc){
     if(btbTable == NULL){
         return ERROR;
     }
@@ -182,37 +187,35 @@ int indexBTBEntryCalc(BTBTable *btbTable,uint32_t pc){
     return (pc & btbTable ->indexMask);//calculating index for btbEntry
 }
 
-int indexTwoBitCounter(BTBTable *btbTable,uint32_t pc) {
+int getIndexTwoBitCounter(BranchPredictor *btbTable,uint32_t pc) {
     if (btbTable == NULL) {
         return ERROR;
     }
     History *currHistory = &(btbTable->globalHistory);
     if (!(btbTable->isGlobalHist)) {
-        int indexHistory = indexBTBEntryCalc(btbTable, pc);
+        int indexHistory = getIndexBTBEntry(btbTable, pc);
         currHistory = btbTable->localHistory + indexHistory;
     }
     uint8_t rawIndexTwoBitCounter = getFSMIndex(currHistory);
-    if (btbTable->isGlobalHist || btbTable->isGlobalTable) {
-        uint8_t calcadPC = 0;
-        switch (btbTable->shared) {
-            case NOT_SHARED:
-                return rawIndexTwoBitCounter;
-            case LSB: {
-                calcadPC = (uint8_t) (pc >> SHARE_LSB);
-                break;
-            }
-            case MID: {
-                calcadPC = (uint8_t) (pc >> SHARE_MID);
-                break;
-            }
+    uint8_t calcadPC = 0;
+    switch (btbTable->shared) {
+        case NOT_SHARED:
+            return rawIndexTwoBitCounter;
+        case LSB: {
+            calcadPC = (uint8_t) (pc >> SHARE_LSB);
+            rawIndexTwoBitCounter = calcadPC ^ rawIndexTwoBitCounter;
+            break;
         }
-        rawIndexTwoBitCounter =  calcadPC ^ rawIndexTwoBitCounter;
-        return rawIndexTwoBitCounter & currHistory ->mask;
+        case MID: {
+            calcadPC = (uint8_t) (pc >> SHARE_MID);
+            rawIndexTwoBitCounter = calcadPC ^ rawIndexTwoBitCounter;
+            break;
+        }
     }
-    return rawIndexTwoBitCounter;
+    return rawIndexTwoBitCounter & currHistory->mask;
 }
 
-BTBTable globalBTBTable;
+BranchPredictor globalBranchPred;
 SIM_stats globalState;
 
 
@@ -235,15 +238,84 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize,
     else
         globalState.size +=  btbSize * tableSize;
 
-    return initBTBTable(&globalBTBTable,btbSize,historySize,tagSize,isGlobalHist,isGlobalTable,Shared);
+    return initBranchPredictor(&globalBranchPred, btbSize, historySize, tagSize,
+                               isGlobalHist, isGlobalTable, Shared);
 }
 
 bool BP_predict(uint32_t pc, uint32_t *dst){
-	return false;
+    int btbIndex = getIndexBTBEntry(&globalBranchPred,pc);
+    BTBEntry tempEntry;
+    initBTBEntry(&tempEntry,globalBranchPred.tagSize);
+    updateBTBEntry(&tempEntry,pc,0);
+
+    if(globalBranchPred.btbTable[btbIndex].tag != tempEntry.tag){
+        (*dst) = pc +4;
+        return false;
+    }
+
+    int fsmIndex = getIndexTwoBitCounter(&globalBranchPred,pc);
+    CALL branchCall;
+    if(globalBranchPred.isGlobalTable){
+        branchCall = getTwoBitCounterResult(globalBranchPred.globalFSM+fsmIndex);
+    }
+    else{
+        branchCall = getTwoBitCounterResult(&(globalBranchPred.localFSM[btbIndex][fsmIndex]));
+    }
+    if(branchCall == TAKEN){
+        (*dst) = globalBranchPred.btbTable[btbIndex].target;
+        return true;
+    }
+    (*dst) = pc + 4;
+    return false;
 }
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst){
-	return;
+    globalState.br_num++;
+    CALL branchCall;
+    if(targetPc != pred_dst){
+        branchCall = NOT_TAKEN;
+    }
+    else{
+        branchCall = TAKEN;
+    }
+    if(branchCall == TAKEN && !taken && pred_dst != (pc + 4)){
+        globalState.flush_num++;
+    }
+    if(branchCall == NOT_TAKEN && taken){
+        globalState.flush_num++;
+    }
+
+    int btbIndex = getIndexBTBEntry(&globalBranchPred,pc);
+    BTBEntry tempEntry;
+    initBTBEntry(&tempEntry,globalBranchPred.tagSize);
+    updateBTBEntry(&tempEntry,pc,targetPc);
+
+    if(globalBranchPred.btbTable[btbIndex].tag != tempEntry.tag){
+        //case new branch ins get in init local history and local FSM
+        initHistory(globalBranchPred.localHistory + btbIndex,globalBranchPred.historySize);
+        for(int i = 0; i < MAX_HISTORY; i++) {
+            initTwoBitCounter(&(globalBranchPred.localFSM[btbIndex][i]));
+        }
+    }
+    globalBranchPred.btbTable[btbIndex] = tempEntry;
+    CALL actualCall = taken ? TAKEN : NOT_TAKEN;
+
+    int tableIndex = getIndexTwoBitCounter(&globalBranchPred,pc);
+
+    if(globalBranchPred.isGlobalTable){
+        updateTwoBitCounter(globalBranchPred.globalFSM + tableIndex,actualCall);
+    }
+
+    else{
+        updateTwoBitCounter(&(globalBranchPred.localFSM[btbIndex][tableIndex]),actualCall);
+    }
+
+    if(globalBranchPred.isGlobalHist){
+        updateHistory(&globalBranchPred.globalHistory,actualCall);
+    }
+    else{
+        updateHistory(globalBranchPred.localHistory + btbIndex,actualCall);
+    }
 }
 
 void BP_GetStats(SIM_stats *curStats) {
