@@ -6,4 +6,4 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 ")
 
 
-add_subdirectory(WET_2)
+add_subdirectory(WET_3)
