@@ -1,0 +1,26 @@
+#!/bin/bash
+
+#test automation script
+INPUT_DIR="tests"
+OUT_DIR="tests_results"
+MY_OUT_DIR_NAME="my_out"
+OUT_BIN="dflow_calc"
+
+
+
+./$OUT_BIN opcode1.dat example1.in p0 p3 p5 p7 p9 d3 d9 > $MY_OUT_DIR_NAME/opcode1-example1.my_out
+diff -d -I '^#' -I '^ #' $MY_OUT_DIR_NAME/opcode1-example1.my_out $OUT_DIR/opcode1-example1.out 
+
+./$OUT_BIN opcode1.dat example2.in p0 p10 p14 d4 d14 > $MY_OUT_DIR_NAME/opcode1-example2.my_out
+diff -d -I '^#' -I '^ #' $MY_OUT_DIR_NAME/opcode1-example2.my_out $OUT_DIR/opcode1-example2.out 
+
+
+./$OUT_BIN opcode1.dat example3.in p0 p3 p5 p7 d3 > $MY_OUT_DIR_NAME/opcode1-example3.my_out
+diff -d -I '^#' -I '^ #' $MY_OUT_DIR_NAME/opcode1-example3.my_out $OUT_DIR/opcode1-example3.out 
+
+./$OUT_BIN opcode2.dat example1.in p0 p3 p5 p7 p9 d3 d9 > $MY_OUT_DIR_NAME/opcode2-example1.my_out
+diff -d -I '^#' -I '^ #' $MY_OUT_DIR_NAME/opcode2-example1.my_out $OUT_DIR/opcode2-example1.out
+
+
+./$OUT_BIN opcode2.dat example2.in p0 p10 p14 d4 d14 > $MY_OUT_DIR_NAME/opcode2-example2.my_out 
+diff -d -I '^#' -I '^ #' $MY_OUT_DIR_NAME/opcode2-example2.my_out $OUT_DIR/opcode2-example2.out
