@@ -1,0 +1,65 @@
+#!/bin/bash
+
+#test automation script
+INPUT_DIR="rand_tests"
+OUT_DIR="rand_results"
+MY_OUT_DIR_NAME="my_out"
+OUT_BIN="dflow_calc"
+# echo -e 'converting tests to UNIX format: '
+# dos2unix $INPUT_DIR/*
+# echo -e 'converting source to UNIX format: '
+# dos2unix *.h *.c *.cpp
+echo -e 'building... '
+make clean
+make
+chmod 777 $OUT_BIN
+
+#remove the directory if it exists, to create a new empty one for the new run.
+if [[  -e $MY_OUT_DIR_NAME ]]; then
+	rm -rf $mkdir $MY_OUT_DIR_NAME
+fi
+mkdir $MY_OUT_DIR_NAME
+
+number_of_example_files=`ls -l $INPUT_DIR | grep rand_example* | wc -l`
+number_of_opcode_files=`ls -l $INPUT_DIR | grep rand_opcode* | wc -l`
+# Trim white spaces
+number_of_example_files="$(echo -e "${number_of_example_files}" | tr -d '[:space:]')"
+number_of_opcode_files="$(echo -e "${number_of_opcode_files}" | tr -d '[:space:]')"
+
+# echo 'got '$number_of_example_files' and '$number_of_opcode_files
+let number_of_tests=$number_of_example_files*$number_of_opcode_files
+echo -e 'number of tests to run:' ${number_of_tests}
+for i in `seq 1 $number_of_example_files` ; do
+    for j in `seq 1 $number_of_opcode_files` ; do
+	    echo 'running test with ******--> rand_opcode'$j'.dat, rand_example'$i'.in******'
+	    testFile1=$INPUT_DIR/'rand_opcode'$j'.dat'
+	    testFile2=$INPUT_DIR/'rand_example'$i'.in'
+	    testArgs="p0 d0"
+	    numInsts=`wc -l < $testFile2`
+       	    numInsts=$(($numInsts-3))
+	    for k in `seq 1 $numInsts`;
+	    do
+		testArgs+=" p$k d$k"
+   	    done
+	    valgrind --leak-check=full --log-file="memoryleaks.out" -v ./$OUT_BIN $testFile1 $testFile2 $testArgs > $MY_OUT_DIR_NAME/'opcode'$j'-example'$i'.myout'
+	    # Use next line instead of previous one to create result output
+ 	    #./$OUT_BIN $testFile1 $testFile2 $testArgs > $OUT_DIR/'opcode'$j'-example'$i'.out'
+    	if [ `diff $OUT_DIR/'opcode'$j'-example'$i'.out' $MY_OUT_DIR_NAME/'opcode'$j'-example'$i'.myout' | wc -w` -eq 0 ] ; then 
+    		echo -e "     ******Passed!******"
+		
+   	else 
+    		echo -e "     ******Failed.******"
+	fi
+	memory=$(cat memoryleaks.out | grep 'total')
+	echo "Memory summary: ${memory}"
+	# to see the number of the errors use the next two lines
+	ERROR=$(cat memoryleaks.out | grep 'ERROR')
+	echo "ERRORS: ${ERROR}"
+
+   done
+
+done
+echo -e 'cleaning directory '
+make clean
+rm -rf $MY_OUT_DIR_NAME
+

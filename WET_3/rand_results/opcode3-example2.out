@@ -1,0 +1,31 @@
+Reading the opcodes latency info from rand_tests/rand_opcode3.dat ... Got latency for 30 opcodes
+Reading the program file rand_tests/rand_example2.in ... Found 14 instructions
+getProgDepth()==15
+getDepDepth(0)==0
+getInstDeps(0)=={-1,-1}
+getDepDepth(1)==1
+getInstDeps(1)=={0,-1}
+getDepDepth(2)==1
+getInstDeps(2)=={0,-1}
+getDepDepth(3)==1
+getInstDeps(3)=={-1,0}
+getDepDepth(4)==1
+getInstDeps(4)=={-1,0}
+getDepDepth(5)==1
+getInstDeps(5)=={-1,0}
+getDepDepth(6)==1
+getInstDeps(6)=={-1,0}
+getDepDepth(7)==1
+getInstDeps(7)=={0,-1}
+getDepDepth(8)==1
+getInstDeps(8)=={0,-1}
+getDepDepth(9)==1
+getInstDeps(9)=={0,0}
+getDepDepth(10)==1
+getInstDeps(10)=={-1,0}
+getDepDepth(11)==1
+getInstDeps(11)=={-1,0}
+getDepDepth(12)==1
+getInstDeps(12)=={0,-1}
+getDepDepth(13)==1
+getInstDeps(13)=={0,0}
