@@ -2,6 +2,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cassert>
+#include "TwoLevelCache.h"
 
 using std::FILE;
 using std::string;
@@ -10,7 +12,7 @@ using std::endl;
 using std::cerr;
 using std::ifstream;
 using std::stringstream;
-
+using namespace cacheSim;
 int main(int argc, char **argv) {
 
 	if (argc < 19) {
@@ -60,6 +62,8 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	TwoLevelCache twoLevelCache(MemCyc,BSize,(WritePolicy)WrAlloc,L1Size,L1Assoc,L1Cyc,L2Size,L2Assoc,L2Cyc);
+
 	while (getline(file, line)) {
 
 		stringstream ss(line);
@@ -71,25 +75,23 @@ int main(int argc, char **argv) {
 			return 0;
 		}
 
-		// DEBUG - remove this line
-		cout << "operation: " << operation;
-
 		string cutAddress = address.substr(2); // Removing the "0x" part of the address
 
-		// DEBUG - remove this line
-		cout << ", address (hex)" << cutAddress;
+		unsigned long int numric_address = 0;
+        numric_address = strtoul(cutAddress.c_str(), NULL, 16);
 
-		unsigned long int num = 0;
-		num = strtoul(cutAddress.c_str(), NULL, 16);
-
-		// DEBUG - remove this line
-		cout << " (dec) " << num << endl;
-
+        if(operation == 'R'){
+            twoLevelCache.readFromAddress(numric_address);
+        }
+        else{
+            assert(operation == 'W');
+            twoLevelCache.writeToAddress(numric_address);
+        }
 	}
 
-	double L1MissRate;
-	double L2MissRate;
-	double avgAccTime;
+	double L1MissRate = twoLevelCache.getL1MissRate();
+	double L2MissRate = twoLevelCache.getL2MissRate();
+	double avgAccTime = twoLevelCache.getAccTimeAvg();
 
 	printf("L1miss=%.03f ", L1MissRate);
 	printf("L2miss=%.03f ", L2MissRate);
