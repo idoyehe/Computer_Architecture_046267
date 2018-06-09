@@ -6,7 +6,6 @@ namespace cacheSim {
     private:
         unsigned long int tag;
         bool invalid;
-        bool dirty;
         int timeStamp;
     public:
         CacheEntry();
@@ -15,13 +14,9 @@ namespace cacheSim {
 
         void setInvalidBit(bool newInvalid);
 
-        void setDirtyBit(bool newDirty);
-
-        bool getDirtyBit() const;
-
         bool getInvalidBit() const;
 
-        unsigned long int getTagBit() const;
+        unsigned long int getTag() const;
 
         void setTimeStamp(int newTimeStamp);
 
