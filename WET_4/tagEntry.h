@@ -2,14 +2,14 @@
 #define COMPUTER_ARCHITECTURE_046267_CACHEENTRY_H
 
 namespace cacheSim {
-    class CacheEntry {
+    class tagEntry {
     private:
         unsigned long int tag;
         bool invalid;
         int timeStamp;
         bool dirty;
     public:
-        CacheEntry();
+        tagEntry();
 
         void setTag(unsigned long int newTag);
 

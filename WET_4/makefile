@@ -1,5 +1,5 @@
 CC = g++
-PROG_OBJS = cacheEntry.o cacheLevel.o TwoLevelCache.o cacheSim.o
+PROG_OBJS = tagEntry.o cacheLevel.o TwoLevelCache.o cacheSim.o
 PROG = cacheSim
 
 			 
@@ -19,10 +19,10 @@ cacheSim.o: cacheSim.cpp cacheLevel.h
 TwoLevelCache.o: TwoLevelCache.cpp TwoLevelCache.h cacheLevel.h
 	$(CC) -c $(DEBUG_FLAG) $(COMP_FLAG) $*.cpp
 	
-cacheLevel.o: cacheLevel.cpp cacheLevel.h cacheEntry.h
+cacheLevel.o: cacheLevel.cpp cacheLevel.h tagEntry.h
 	$(CC) -c $(DEBUG_FLAG) $(COMP_FLAG) $*.cpp
 	
-cacheEntry.o: cacheEntry.cpp cacheEntry.h
+tagEntry.o: tagEntry.cpp tagEntry.h
 	$(CC) -c $(DEBUG_FLAG) $(COMP_FLAG) $*.cpp
 	
 

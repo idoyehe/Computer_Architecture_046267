@@ -2,6 +2,13 @@
 #define COMPUTER_ARCHITECTURE_046267_TWOLEVELCACHE_H
 
 #include "cacheLevel.h"
+#include <string>
+#include <iostream>
+
+using std::string;
+using std::cout;
+using std::endl;
+
 namespace cacheSim {
     typedef enum {WRITE_NO_ALLOCATE = 0, WRITE_ALLOCATE = 1} WritePolicy;
 
