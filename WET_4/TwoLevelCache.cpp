@@ -2,6 +2,7 @@
 #include <cstdio>
 #include "TwoLevelCache.h"
 using namespace cacheSim;
+
 cacheSim::TwoLevelCache::TwoLevelCache(unsigned int memoryAccCycles,
                                        unsigned int log2BlockSize,
                                        WritePolicy writePolicy,
