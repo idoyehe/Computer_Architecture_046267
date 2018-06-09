@@ -55,6 +55,7 @@ int cacheSim::CacheLevel::getWayToStore(unsigned long int address) const{
     for(unsigned int currentWay = 0; currentWay < this->numWays; currentWay++) {
         int currentTimeStamp = this->ways[currentWay][set].getTimeStamp();//LRU policy
         if(minTime == INVALID || minTime > currentTimeStamp){
+            assert(!this->ways[currentWay][set].getInvalidBit());
             minTime = currentTimeStamp;
             wayToEdit = currentWay;
         }
@@ -64,6 +65,7 @@ int cacheSim::CacheLevel::getWayToStore(unsigned long int address) const{
 }
 
 bool cacheSim::CacheLevel::storeNewAddress(unsigned long int address, int time, unsigned long int* addressRemoved, bool* wasDirty) {
+    assert(!this->isAddressExist(address));
     int wayToStore = this->getWayToStore(address);
     unsigned int tag = this->tagCalculator(address);
     unsigned int set = this->setCalculator(address);

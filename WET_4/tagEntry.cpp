@@ -3,7 +3,7 @@
 
 using namespace cacheSim;
 
-cacheSim::tagEntry::tagEntry():tag(0),invalid(true), timeStamp(INVALID), dirty(
+cacheSim::tagEntry::tagEntry():tag(INVALID), invalid(true), timeStamp(INVALID), dirty(
         false){}
 
 void cacheSim::tagEntry::setTag(unsigned long int newTag) {

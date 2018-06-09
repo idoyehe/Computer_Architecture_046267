@@ -12,8 +12,6 @@ using std::endl;
 namespace cacheSim {
     typedef enum {WRITE_NO_ALLOCATE = 0, WRITE_ALLOCATE = 1} WritePolicy;
 
-
-
     class TwoLevelCache {
     private:
         unsigned int cyclesCounter;
@@ -35,6 +33,8 @@ namespace cacheSim {
         double getL1MissRate() const;
         double getL2MissRate() const;
         double getAccTimeAvg () const;
+        int getCountAccess() const ;
+        int getCountCycle() const ;
 
 
 
