@@ -3,7 +3,8 @@
 
 using namespace cacheSim;
 
-cacheSim::CacheEntry::CacheEntry():tag(0),invalid(true), timeStamp(INVALID){}
+cacheSim::CacheEntry::CacheEntry():tag(0),invalid(true), timeStamp(INVALID), dirty(
+        false){}
 
 void cacheSim::CacheEntry::setTag(unsigned long int newTag) {
     this->tag = newTag;
@@ -27,4 +28,12 @@ int CacheEntry::getTimeStamp() const {
 
 void CacheEntry::setTimeStamp(int newTimeStamp) {
     this->timeStamp = newTimeStamp;
+}
+
+void CacheEntry::setDirtyBit(bool newDirtyBit) {
+    this->dirty = newDirtyBit;
+}
+
+bool CacheEntry::getDirtyBit() const{
+    return this->dirty;
 }

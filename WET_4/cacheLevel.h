@@ -23,7 +23,7 @@ namespace cacheSim {
         unsigned int tagCalculator(unsigned long int address) const;
         unsigned int setCalculator(unsigned long int address) const;
         int getWayToStore(unsigned long int address) const;//return which way was remove
-        bool storeNewAddress(unsigned long int address, int time, unsigned long int* addressRemoved);
+        bool storeNewAddress(unsigned long int address, int time, unsigned long int* addressRemoved, bool* wasDirty);
         bool isAddressExist(unsigned long int address);
         bool updateBlockTimeStamp(unsigned long int address, int time);
 
@@ -33,6 +33,7 @@ namespace cacheSim {
         unsigned int getCountAccess() const ;
         unsigned int getCycleAccess() const ;
         bool removeBlock(unsigned long int address);
+        void markBlockDirty(unsigned long int address);
     };
 }
 #endif //COMPUTER_ARCHITECTURE_046267_CACHELEVEL_H

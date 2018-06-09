@@ -33,7 +33,7 @@ cacheSim::CacheLevel::~CacheLevel() {
 }
 
 unsigned int cacheSim::CacheLevel::tagCalculator(unsigned long int address) const{
-    return address >> (log2BlockSize + log2NumWays);
+    return address >> (log2BlockSize + log2WaySize);
 
 }
 
@@ -61,12 +61,14 @@ int cacheSim::CacheLevel::getWayToStore(unsigned long int address) const{
     return wayToEdit;
 }
 
-bool cacheSim::CacheLevel::storeNewAddress(unsigned long int address, int time, unsigned long int* addressRemoved) {
+bool cacheSim::CacheLevel::storeNewAddress(unsigned long int address, int time, unsigned long int* addressRemoved, bool* wasDirty) {
     int wayToStore = this->getWayToStore(address);
     unsigned int tag = this->tagCalculator(address);
     unsigned int set = this->setCalculator(address);
     bool removed = false;
-    if(!this->ways[wayToStore][set].getInvalidBit() && addressRemoved != nullptr){
+    (*wasDirty) = false;
+    if(!this->ways[wayToStore][set].getInvalidBit()){
+        (*wasDirty) = this->ways[wayToStore][set].getDirtyBit();
         unsigned long int addressRemoved_temp = this->ways[wayToStore][set].getTag();
         addressRemoved_temp = addressRemoved_temp << this->log2WaySize;
         addressRemoved_temp += set;
@@ -84,7 +86,8 @@ bool cacheSim::CacheLevel::isAddressExist(unsigned long int address){
     unsigned int tag = this->tagCalculator(address);
     unsigned int set = this->setCalculator(address);
     for(unsigned int i = 0; i < this->numWays; i++){
-        if(this->ways[i][set].getTag() == tag){
+        if(this->ways[i][set].getTag() == tag &&
+           !this->ways[i][set].getInvalidBit()){
             return true;
         }
     }
@@ -132,10 +135,25 @@ bool CacheLevel::removeBlock(unsigned long int address) {
     unsigned int tag = this->tagCalculator(address);
     unsigned int set = this->setCalculator(address);
     for(unsigned int i = 0; i < this->numWays; i++) {
-        if (this->ways[i][set].getTag() == tag) {
+        if(this->ways[i][set].getTag() == tag &&
+           !this->ways[i][set].getInvalidBit()){
             this->ways[i][set].setInvalidBit(true);
             return true;
         }
     }
     return false;
+}
+
+void CacheLevel::markBlockDirty(unsigned long int address) {
+    if(!this->isAddressExist(address)){
+        return;
+    }
+    unsigned int tag = this->tagCalculator(address);
+    unsigned int set = this->setCalculator(address);
+    for(unsigned int i = 0; i < this->numWays; i++) {
+        if(this->ways[i][set].getTag() == tag &&
+           !this->ways[i][set].getInvalidBit()){
+            this->ways[i][set].setDirtyBit(true);
+        }
+    }
 }

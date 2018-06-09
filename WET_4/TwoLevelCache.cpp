@@ -1,3 +1,4 @@
+#include <cassert>
 #include "TwoLevelCache.h"
 using namespace cacheSim;
 cacheSim::TwoLevelCache::TwoLevelCache(unsigned int memoryAccCycles,
@@ -19,7 +20,7 @@ void TwoLevelCache::accessCache(unsigned long int address) {
     this->countAccess++;
     this->cyclesCounter += this->L1.getCycleAccess();
     this->L1.incCountAccess();
-    if(!this->L1.isAddressExist(address)) {
+    if (!this->L1.isAddressExist(address)) {
         this->L1.incCountMiss();
         //failed to find in  L1 search in L2
         this->L2.incCountAccess();
@@ -30,18 +31,33 @@ void TwoLevelCache::accessCache(unsigned long int address) {
 
             //store from memory in L2 and then L1
             unsigned long int removed_address;
-            if(this->L2.storeNewAddress(address,this->time,&removed_address)) {
+            bool wasDirty;
+            if (this->L2.storeNewAddress(address, this->time, &removed_address,
+                                         &wasDirty)) {
                 this->L1.removeBlock(removed_address);
             }
-            this->L1.storeNewAddress(address,this->time, nullptr);
+            if (this->L1.storeNewAddress(address, this->time, &removed_address,
+                                         &wasDirty)) {
+                if (wasDirty) {
+                    assert(this->L2.isAddressExist(removed_address));
+                    this->L2.updateBlockTimeStamp(removed_address, this->time);
+                }
+            }
+        } else {// it is in L2 but not in L1
+            unsigned long int removed_address;
+            bool wasDirty;
+            this->L2.updateBlockTimeStamp(address, this->time);
+            if (this->L1.storeNewAddress(address, this->time,
+                                         &removed_address, &wasDirty)) {
+                if (wasDirty) {
+                    assert(this->L2.isAddressExist(removed_address));
+                    this->L2.updateBlockTimeStamp(removed_address,
+                                                  this->time);
+                }
+            }
         }
-        else{// it is in L2 but not in L1
-            this->L2.updateBlockTimeStamp(address,this->time);
-            this->L1.storeNewAddress(address,this->time, nullptr);
-        }
-    }
-    else{
-        this->L1.updateBlockTimeStamp(address,this->time);
+    } else {
+        this->L1.updateBlockTimeStamp(address, this->time);
     }
     this->time++;
 }
@@ -53,6 +69,7 @@ void TwoLevelCache::readFromAddress(unsigned long int address) {
 void TwoLevelCache::writeToAddress(unsigned long int address) {
     if(this->writePolicy == WRITE_ALLOCATE){
         this->accessCache(address);
+        this->L1.markBlockDirty(address);
     }
     else{
         this->countAccess++;
