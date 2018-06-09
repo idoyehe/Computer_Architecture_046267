@@ -1,8 +1,9 @@
 #include "cacheEntry.h"
+#define INVALID -1
 
 using namespace cacheSim;
 
-cacheSim::CacheEntry::CacheEntry():tag(0),invalid(true),dirty(false){}
+cacheSim::CacheEntry::CacheEntry():tag(0),invalid(true),dirty(false), timeStamp(INVALID){}
 
 void cacheSim::CacheEntry::setTag(unsigned long int newTag) {
     this->tag = newTag;
@@ -26,4 +27,12 @@ bool CacheEntry::getInvalidBit() const {
 
 unsigned long int CacheEntry::getTagBit() const {
     return this->tag;
+}
+
+int CacheEntry::getTimeStamp() const {
+    return this->timeStamp;
+}
+
+void CacheEntry::setTimeStamp(int newTimeStamp) {
+    this->timeStamp = newTimeStamp;
 }

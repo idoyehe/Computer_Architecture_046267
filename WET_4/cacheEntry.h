@@ -7,6 +7,7 @@ namespace cacheSim {
         unsigned long int tag;
         bool invalid;
         bool dirty;
+        int timeStamp;
     public:
         CacheEntry();
 
@@ -21,6 +22,10 @@ namespace cacheSim {
         bool getInvalidBit() const;
 
         unsigned long int getTagBit() const;
+
+        void setTimeStamp(int newTimeStamp);
+
+        int  getTimeStamp() const;
     };
 }
 #endif //COMPUTER_ARCHITECTURE_046267_CACHEENTRY_H
