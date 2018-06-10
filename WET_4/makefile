@@ -4,7 +4,7 @@ PROG = cacheSim
 
 			 
 DEBUG_FLAG =  -g
-COMP_FLAG = -std=c++11 -Wall
+COMP_FLAG = -std=c++11 -Wall -DNDEBUG
 
 ##################### main: Two Level Cache simulator
 $(PROG) : $(PROG_OBJS)
