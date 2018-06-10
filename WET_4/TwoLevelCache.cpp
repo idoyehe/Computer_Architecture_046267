@@ -22,7 +22,10 @@ void TwoLevelCache::accessCache(unsigned long int address) {
     this->L1.incCountAccess();
     this->cyclesCounter += this->L1.getCycleAccess();
     if (this->L1.isAddressExist(address)) {
-        bool res = this->L1.updateBlockTimeStamp(address, this->time++);
+#ifndef NDEBUG
+        bool res =
+#endif
+        this->L1.updateBlockTimeStamp(address, this->time++);
         assert(res);
         return;
     }
@@ -32,7 +35,10 @@ void TwoLevelCache::accessCache(unsigned long int address) {
     this->cyclesCounter += this->L2.getCycleAccess();
     if (this->L2.isAddressExist(address)) {
         assert(!this->L1.isAddressExist(address));
-        bool res = this->L2.updateBlockTimeStamp(address, this->time++);
+#ifndef NDEBUG
+        bool res =
+#endif
+        this->L2.updateBlockTimeStamp(address, this->time++);
         assert(res);
         unsigned long int removed_block_address = 0;
         bool wasDirty = false;
@@ -40,7 +46,10 @@ void TwoLevelCache::accessCache(unsigned long int address) {
                                      &wasDirty)) {
             if (wasDirty) {
                 assert(this->L2.isAddressExist(removed_block_address));
-                res = this->L2.updateBlockTimeStamp(removed_block_address, this->time++);
+#ifndef NDEBUG
+                res =
+#endif
+                this->L2.updateBlockTimeStamp(removed_block_address, this->time++);
                 assert(res);
             }
         }
@@ -60,7 +69,10 @@ void TwoLevelCache::accessCache(unsigned long int address) {
                                  &wasDirty)) {
         if (wasDirty) {
             assert(this->L2.isAddressExist(removed_block_address));
-            bool res = this->L2.updateBlockTimeStamp(removed_block_address, this->time++);
+#ifndef NDEBUG
+            bool res =
+#endif
+             this->L2.updateBlockTimeStamp(removed_block_address, this->time++);
             assert(res);
         }
     }
