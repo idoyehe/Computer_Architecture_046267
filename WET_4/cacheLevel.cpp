@@ -27,9 +27,9 @@ cacheSim::CacheLevel::CacheLevel(unsigned int cyclesAccess,unsigned int log2Size
 
 cacheSim::CacheLevel::~CacheLevel() {
     for (unsigned int i = 0; i < this->numWays; ++i){
-        delete (this->ways[i]);
+        delete [] (this->ways[i]);
     }
-    delete ( this->ways);
+    delete[] ( this->ways);
 }
 
 unsigned int cacheSim::CacheLevel::tagCalculator(unsigned long int address) const{
