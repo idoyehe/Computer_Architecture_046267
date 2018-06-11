@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include "TwoLevelCache.h"
+
 using namespace cacheSim;
 
 cacheSim::TwoLevelCache::TwoLevelCache(unsigned int memoryAccCycles,

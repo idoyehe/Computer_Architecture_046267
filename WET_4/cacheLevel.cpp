@@ -19,7 +19,7 @@ cacheSim::CacheLevel::CacheLevel(unsigned int cyclesAccess,unsigned int log2Size
     this->numOfSets = this->numOfSets << this->log2WaySize;
     this->numWays = this->numWays << this->log2NumWays;
 
-    this->ways = new tagEntry*[numWays];
+    this->ways = new tagEntry* [numWays];
     for (unsigned int i = 0; i < this->numWays; ++i)
         this->ways[i] = new tagEntry[this->numOfSets];
 

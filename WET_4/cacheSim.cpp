@@ -1,8 +1,6 @@
-#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <cassert>
 #include "TwoLevelCache.h"
 
 using std::FILE;
@@ -82,17 +80,19 @@ int main(int argc, char **argv) {
         if(operation == 'r'){
             twoLevelCache.readFromAddress(numric_address);
         }
-        else{
-            assert(operation == 'w');
-            twoLevelCache.writeToAddress(numric_address);
-        }
+        else {
+			if (operation != 'w') {
+				// Operation appears in an Invalid format
+				cout << "Command Format error" << endl;
+				return 0;
+			}
+			twoLevelCache.writeToAddress(numric_address);
+		}
 	}
 
 	double L1MissRate = twoLevelCache.getL1MissRate();
 	double L2MissRate = twoLevelCache.getL2MissRate();
 	double avgAccTime = twoLevelCache.getAccTimeAvg();
-//	printf("Access Number %d\n",twoLevelCache.getCountAccess());
-//	printf("Cycles Number %d\n",twoLevelCache.getCountCycle());
 
 	printf("L1miss=%.03f ", L1MissRate);
 	printf("L2miss=%.03f ", L2MissRate);
