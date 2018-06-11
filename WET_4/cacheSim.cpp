@@ -59,10 +59,8 @@ int main(int argc, char **argv) {
 			return 0;
 		}
 	}
-	int i =0;
 	TwoLevelCache twoLevelCache(MemCyc,BSize,(WritePolicy)WrAlloc,L1Size,L1Assoc,L1Cyc,L2Size,L2Assoc,L2Cyc);
 	while (getline(file, line)) {
-		i++;
 		stringstream ss(line);
 		string address;
 		char operation = 0; // read (R) or write (W)
